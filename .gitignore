@@ -1,0 +1,5 @@
+.venv/
+__pycache__/
+desktop.ini
+# binário de 103 MB passa do limite do GitHub; ver README para baixar e conferir o hash
+engines/*.exe
