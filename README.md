@@ -33,3 +33,23 @@ Get-FileHash .\stockfish-windows-x86-64-universal.zip -Algorithm SHA256
 ```
 
 O `.exe` (103 MB) não fica no repositório porque excede o limite de arquivo do GitHub.
+
+## Uso na partida
+
+```powershell
+.venv\Scripts\python.exe xadrex.py
+```
+
+Informe nossa cor, tempo base e incremento (padrão 15 min + 10 s). No turno do adversário, digite o lance
+anunciado em UCI (`e2e4`, `e7e8q`). Nosso lance aparece como `>>> NOSSO LANCE: ...`.
+
+| Comando | Efeito |
+| --- | --- |
+| `u` | desfaz nosso último lance e o do adversário (corrigir digitação) |
+| `tab` | mostra tabuleiro e lista de lances |
+| `t mm:ss` | acerta nosso relógio pelo relógio físico |
+| `sair` | fecha; a partida é retomada ao rodar de novo |
+| `fim` | encerra a partida (abandono, tempo, empate acordado) |
+
+O log de cada partida fica em `logs/` (um lance por linha: número, cor, UCI, profundidade, nós, avaliação,
+PV, tempo). Testes: `.venv\Scripts\python.exe test_xadrex.py`.

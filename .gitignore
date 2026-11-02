@@ -3,3 +3,8 @@ __pycache__/
 desktop.ini
 # binário de 103 MB passa do limite do GitHub; ver README para baixar e conferir o hash
 engines/*.exe
+partida_atual.json
+partida_atual.tmp
+# logs de teste; os de partida vão para a banca à parte
+logs/
+partida_invalida_*.json
