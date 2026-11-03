@@ -11,7 +11,7 @@ decide os próprios lances e grava o log exigido pela organização.
 | Binário | `stockfish-windows-x86-64-universal.exe` (release oficial) |
 | Licença do motor | GPLv3 — `engines/STOCKFISH-LICENSE.txt`; código-fonte em https://github.com/official-stockfish/Stockfish/tree/sf_19 |
 | Biblioteca de tabuleiro | `chess` (python-chess) 1.11.2 — representação e legalidade dos lances |
-| Autoria da equipe | Gestão de tempo — `tempo.py` (ver seção abaixo); integração e controle da busca em `xadrex.py` |
+| Autoria da equipe | Gestão de tempo — `tempo.py` (ver seção abaixo); integração e controle da busca em `xadrex.py`; anti-empate opcional em `empate.py` (desligado por padrão) |
 | Book / tablebase / GPU | Não utilizados |
 
 ## Instalação (feita antes do evento, com internet)
@@ -76,7 +76,18 @@ busca e parte humana medida.
 `.venv\Scripts\python.exe xadrex.py`. Nesse modo o tempo de digitar não é medido, então a leitura do relógio
 (`e7e5 12:31`) volta a ser obrigatória a cada 8 lances nossos e abaixo de 2 min.
 
-Testes: `.venv\Scripts\python.exe test_tempo.py` e `.venv\Scripts\python.exe test_xadrex.py`.
+**Anti-empate (opcional).** Desligado por padrão: só será ligado se a arena mostrar ganho. Quando a busca escolhe
+um lance que repete uma posição (ou a partida está há 20 meios-lances sem captura nem lance de peão) e a avaliação
+está entre -0,30 e +0,30, o programa faz uma 2ª busca curta só entre os lances que não repetem e joga a melhor
+alternativa se ela não for pior que -0,50. Não tenta com menos de 1 min no relógio, sem material para dar mate,
+em final só de reis e peões nem com lance único; qualquer erro nessa etapa mantém o lance original. Para ligar, no
+PowerShell: `$env:XADREX_ANTIEMPATE=1; .venv\Scripts\python.exe xadrex.py`; no cmd: `set XADREX_ANTIEMPATE=1` e
+depois `.venv\Scripts\python.exe xadrex.py`. Com a chave ligada, o log de cada lance nosso ganha o campo
+`antiempate=` (gatilho, freio, candidatos, avaliação da alternativa, decisão e tempo da 2ª busca). Os limiares
+ficam em `empate.py` e ainda são suposições.
+
+Testes: `.venv\Scripts\python.exe test_tempo.py`, `.venv\Scripts\python.exe test_empate.py` e
+`.venv\Scripts\python.exe test_xadrex.py`.
 
 ## Gestor de tempo (autoria da equipe)
 

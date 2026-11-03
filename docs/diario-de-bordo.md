@@ -18,7 +18,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 ## Como retomar
 
 1. `git switch competicao-ajustes` e leia a seção "Estado atual".
-2. Testes: `python test_tempo.py` e `python test_xadrex.py` (no Windows, `.venv\Scripts\python.exe ...`).
+2. Testes: `python test_tempo.py`, `python test_empate.py` e `python test_xadrex.py` (no Windows, `.venv\Scripts\python.exe ...`).
 3. Pegue o primeiro item "pendente" da tabela de fases. Uma mudança por commit, com teste.
 4. Ao terminar uma fase, atualize a tabela e registre as decisões novas abaixo.
 
@@ -32,7 +32,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | f091a20 |
 | — Testar o leitor de teclas no Windows (ou usar a chave `XADREX_ENTRADA_SIMPLES`, D9) | pendente | |
-| 4. Anti-empate com risco limitado | adiada (depois do prazo, só com validação na arena) | |
+| 4. Anti-empate com risco limitado | implementada (desligada por padrão, chave `XADREX_ANTIEMPATE`, D10); validação na arena pendente | commit "feat: anti-empate opcional com risco limitado" (hash a registrar) |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
 | — Incremento oficial | confirmado: 10+0, relógio físico (organização, 03/11/2026) | |
 
@@ -83,6 +83,15 @@ Conclusão para a equipe: o ganho competitivo está em não perder por tempo e, 
 ### D9 — 03/11/2026 — Chave de emergência para o leitor de teclas
 O leitor `msvcrt` nunca foi testado no Windows, e programa travado na partida é derrota. Com `XADREX_ENTRADA_SIMPLES=1`, `ler_linha` usa `input()` (como fora de terminal) e o operador liga a chave sem mexer em código.
 Consequência: sem o instante da 1ª tecla, o tempo de ouvir além de `OUVIR_MS` e o de digitar o lance adversário não saem do relógio interno, que passa a contar a menos (lado inseguro). Por isso, com a chave, `fechar_relogio` marca o lance como não medido (`medido = False`) e volta a incrementar `k`, para valer a regra antiga inteira de `precisa_leitura`: leitura obrigatória a cada 8 lances nossos e abaixo de 2 min. Só `medido = False` não bastaria, porque `k` não cresce mais desde D6 e a leitura só seria exigida abaixo de 2 min, com o erro acumulado da partida toda. O fim do nosso tempo (ENTER ao bater o relógio) continua medido corretamente.
+
+### D10 — 03/11/2026 — Anti-empate implementado, desligado por padrão
+Muda D5 só no momento: o código entregue em 04/11 é o que joga no dia 06, então a melhoria entra agora, desligada e sem risco para o comportamento padrão, e só é ligada (`XADREX_ANTIEMPATE=1`, ou `xadrex.ANTIEMPATE = True` na arena) se a arena mostrar ganho.
+- Regras em `empate.py` (funções puras, `test_empate.py`); integração em `xadrex.antiempate`, chamada por `pensar` depois da busca normal (só na 1ª tentativa, com motor vivo). Assinatura e retorno de `pensar` mantidos; o resumo vai em `info["antiempate"]` e o motivo ganha `;antiempate-desviou` quando troca de lance.
+- Gatilho: |aval| ≤ 30 cp e (o lance escolhido leva a posição já ocorrida, `is_repetition(2)` depois do push; ou `halfmove_clock` ≥ 20 e o lance escolhido não é captura nem lance de peão).
+- Freios: relógio < 60 s, lance único, sem material de mate (`has_insufficient_material`), só reis e peões, orçamento da 2ª busca < 200 ms. Mate não dispara (fica fora da janela).
+- 2ª busca: `buscar` com `root_moves` (o mesmo vigia que mata motor travado), orçamento = 0,5 × alvo com teto em máximo − já gasto. Candidatos: lances que não repetem; em sem-progresso, só capturas e lances de peão. Troca se a alternativa (iteração completa) tiver aval ≥ −50 cp. Erro na 2ª busca: mata o motor (o próximo `pensar` reabre) e mantém o lance original.
+- **Limiares (30, −50, 20, 60 s, 0,5) são suposições**, sem medida. Riscos: a 2ª busca é mais rasa que a principal e pode aceitar um lance que perde em profundidade; contra outro Stockfish um lance pior costuma virar derrota (D5). Por isso o padrão é desligado.
+- Smoke real (Stockfish 19, macOS): xeque perpétuo com os dois ciclos já jogados; a busca escolheu repetir com 0.00 e o anti-empate trocou por `Df1` (0.00 na 2ª busca, 1,1 s). Linha do log: `antiempate=gatilho:repeticao,freio:-,candidatos:22,alt:f8f1(+0.00),decisao:desviou,busca2:1.12s`.
 
 ## Arena
 

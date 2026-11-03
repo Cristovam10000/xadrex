@@ -13,6 +13,7 @@ from pathlib import Path
 import chess
 import chess.engine
 
+import empate
 import tempo
 
 RAIZ = Path(__file__).resolve().parent
@@ -22,6 +23,8 @@ LOGS = RAIZ / "logs"
 OPCOES_MOTOR = {"Threads": max(1, (os.cpu_count() or 2) - 2), "Hash": 512}
 # chave de emergência (leitor de teclas com problema no dia): input() simples, sem o instante da 1ª tecla
 ENTRADA_SIMPLES = os.environ.get("XADREX_ENTRADA_SIMPLES") == "1"
+# anti-empate (empate.py): desligado até a arena mostrar ganho; lido a cada lance (a arena liga pelo atributo)
+ANTIEMPATE = os.environ.get("XADREX_ANTIEMPATE") == "1"
 AJUDA = ("Comandos: <lance UCI> [mm:ss do nosso relógio] | u (desfaz último par de lances) | tab | sair | fim\n"
          "Depois do nosso lance, aperte ENTER ao bater o relógio: o programa mede o nosso tempo sozinho.\n"
          "Ex.: 'e7e5 12:31' registra o lance e corrige o relógio interno com o relógio físico (opcional).")
@@ -297,12 +300,14 @@ def iniciar():
     return est, chess.Board()
 
 
-def buscar(board, controle, nossa, ultimo, prazo_ms):
+def buscar(board, controle, nossa, ultimo, prazo_ms, root_moves=None):
     """Roda a busca do Stockfish sob o comando do gestor de tempo. `ultimo` recebe a última iteração completa;
-    passado `prazo_ms` sem bestmove, o motor é morto e vale a última iteração completa."""
+    passado `prazo_ms` sem bestmove, o motor é morto e vale a última iteração completa.
+    `root_moves` restringe a busca a esses lances (anti-empate)."""
     t0 = time.monotonic()
     motivo = None
-    an = motor.analysis(board, chess.engine.Limit(time=controle.maximo / 1000), info=chess.engine.INFO_ALL)
+    an = motor.analysis(board, chess.engine.Limit(time=controle.maximo / 1000), info=chess.engine.INFO_ALL,
+                        root_moves=root_moves)
     try:
         while True:
             try:
@@ -360,12 +365,54 @@ def pensar(board, est, nossa, t0):
                 abrir_motor()
             lance, info, motivo = buscar(board, controle, nossa, ultimo, prazo)
             if lance in board.legal_moves:
+                if ANTIEMPATE and tentativa == 0 and motor is not None:
+                    return antiempate(board, est, nossa, t0, lance, info, controle, motivo)
                 return lance, info, controle, motivo
         except Exception as e:
             print(f"!! motor falhou ({e!r})")
             if controle.lance is not None and controle.lance in board.legal_moves:
                 return controle.lance, dict(ultimo), controle, "falha-motor;melhor-da-busca"
     return next(iter(board.legal_moves)), {}, controle, "fallback=primeiro-lance-legal"
+
+
+def antiempate(board, est, nossa, t0, lance, info, controle, motivo):
+    """Depois da busca normal: se o lance escolhido mantém um empate (empate.gatilho) e nenhum freio vale, faz uma
+    2ª busca curta só entre lances que não repetem e troca se a melhor alternativa ficar acima de empate.PISO_CP.
+    Qualquer erro mantém o lance original. O resumo vai em info["antiempate"] (log) e, se desviou, no motivo."""
+    reg = {"gatilho": "-", "freio": "-", "candidatos": "-", "alt": "-", "decisao": "manteve", "busca2": "-"}
+    try:
+        reg["gatilho"] = empate.gatilho(board, lance, controle.aval) or "-"
+        if reg["gatilho"] != "-":
+            atraso = tempo.AtrasoHumano(**est["atraso"])
+            gasto = (time.monotonic() - t0) * 1000
+            relogio = est["previsto_ms"] - gasto
+            orc = empate.tempo_busca(controle.alvo, controle.maximo, gasto)
+            reg["freio"] = empate.freio(board, nossa, relogio) or ("sem-tempo" if orc < tempo.MIN_MS else "-")
+            cands = empate.candidatos(board, lance, reg["gatilho"]) if reg["freio"] == "-" else []
+            reg["candidatos"] = str(len(cands)) if reg["freio"] == "-" else "-"
+            if cands:
+                c2 = tempo.ControleBusca(orc, orc)
+                prazo = min(orc + tempo.VIGIA_MS, max(orc + 300, relogio - atraso.media))  # mesmo vigia de pensar
+                t2 = time.monotonic()
+                try:
+                    alt, info2, _ = buscar(board, c2, nossa, {}, prazo, root_moves=cands)
+                except Exception:
+                    matar_motor()  # motor em estado incerto: pensar() reabre no próximo lance
+                    raise
+                finally:
+                    reg["busca2"] = f"{time.monotonic() - t2:.2f}s"
+                aval2 = c2.aval if c2.lance == alt else None  # avaliação só de iteração completa do lance jogado
+                if aval2 is not None:
+                    reg["alt"] = f"{alt.uci()}({aval2 / 100:+.2f})"
+                if alt in cands and alt in board.legal_moves and empate.desviar(aval2):
+                    reg["decisao"] = "desviou"
+                    controle.lance, controle.aval = alt, aval2  # aval_anterior da próxima busca
+                    info2["antiempate"] = reg
+                    return alt, info2, controle, f"{motivo};antiempate-desviou"
+    except Exception as e:  # nunca pode piorar a robustez: fica o lance da busca normal
+        reg["decisao"] = f"manteve(erro:{type(e).__name__})"
+    info["antiempate"] = reg
+    return lance, info, controle, motivo
 
 
 def jogar_nosso_lance(board, est, nossa, log, t0):
@@ -389,7 +436,9 @@ def jogar_nosso_lance(board, est, nossa, log, t0):
               f"lance={num} cor={'brancas' if nossa else 'pretas'} uci={lance.uci()} prof={info.get('depth', '-')} "
               f"nos={info.get('nodes', '-')} aval={aval} pv={pv or '-'} tempo={gasto:.2f}s "
               f"relogio_inicio={fmt_relogio(relogio)} alvo={controle.alvo / 1000:.1f}s max={controle.maximo / 1000:.1f}s "
-              f"parada={motivo} atraso={atraso.media / 1000:.1f}s/{atraso.seguro / 1000:.1f}s")
+              f"parada={motivo} atraso={atraso.media / 1000:.1f}s/{atraso.seguro / 1000:.1f}s"
+              + ("" if "antiempate" not in info else " antiempate=" + ",".join(
+                  f"{k}:{v}" for k, v in info["antiempate"].items())))
     return gasto * 1000
 
 

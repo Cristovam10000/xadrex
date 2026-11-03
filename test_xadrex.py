@@ -130,6 +130,96 @@ def test_motor_travado():
             xadrex.COMANDO_MOTOR = original
 
 
+# busca normal: g1f3 com 0.00 (repete posição); busca restrita (go ... searchmoves): 1º candidato com ALT_CP
+MOTOR_EMPATE = r'''
+import sys
+for linha in sys.stdin:
+    c = linha.split()
+    if not c: continue
+    if c[0] == "uci":
+        print("id name Empate\noption name Threads type spin default 1 min 1 max 512\n"
+              "option name Hash type spin default 16 min 1 max 4096\nuciok", flush=True)
+    elif c[0] == "isready":
+        print("readyok", flush=True)
+    elif c[0] == "go":
+        if "searchmoves" not in c:
+            print("info depth 20 score cp 0 nodes 100 time 1 pv g1f3 g8f6\nbestmove g1f3", flush=True)
+        elif MODO == "morre":
+            sys.exit(0)
+        else:
+            m = c[c.index("searchmoves") + 1]
+            print(f"info depth 12 score cp {ALT_CP} nodes 50 time 1 pv {m}\nbestmove {m}", flush=True)
+'''
+
+
+def test_antiempate_motor_falso():
+    """Com XADREX_ANTIEMPATE: desvia se a alternativa >= piso; mantém se abaixo ou se a 2ª busca falhar.
+    Desligado (padrão): nada muda."""
+    import sys
+    b = chess.Board()
+    for u in "g1f3 g8f6 f3g1 f6g8".split():
+        b.push_uci(u)
+    original = xadrex.COMANDO_MOTOR, xadrex.ANTIEMPATE
+
+    def jogar(d, ligado, alt_cp, modo="ok"):
+        falso = Path(d) / f"empate_{alt_cp}_{modo}.py"
+        falso.write_text(f"ALT_CP = {alt_cp}\nMODO = {modo!r}\n" + MOTOR_EMPATE, encoding="utf-8")
+        xadrex.COMANDO_MOTOR, xadrex.ANTIEMPATE = [sys.executable, "-u", str(falso)], ligado
+        xadrex.abrir_motor()
+        est = {"previsto_ms": 600_000, "inc_s": 0, "atraso": {"media": 5000, "desvio": 2500, "amostras": 0},
+               "aval_anterior": None}
+        lance, info, controle, motivo = xadrex.pensar(b, est, chess.WHITE, time.monotonic())
+        assert lance in b.legal_moves and len(b.move_stack) == 4
+        return lance, info, controle, motivo
+
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            lance, info, controle, motivo = jogar(d, False, 0)
+            assert lance == chess.Move.from_uci("g1f3") and "antiempate" not in info and "antiempate" not in motivo
+            lance, info, controle, motivo = jogar(d, True, xadrex.empate.PISO_CP)
+            reg = info["antiempate"]
+            assert lance != chess.Move.from_uci("g1f3") and motivo.endswith(";antiempate-desviou")
+            assert reg["gatilho"] == "repeticao" and reg["candidatos"] == "19" and reg["decisao"] == "desviou"
+            assert controle.aval == xadrex.empate.PISO_CP and info["depth"] == 12  # aval/PV do lance jogado
+            lance, info, _, motivo = jogar(d, True, xadrex.empate.PISO_CP - 1)
+            assert lance == chess.Move.from_uci("g1f3") and info["antiempate"]["decisao"] == "manteve"
+            assert info["antiempate"]["alt"].endswith("(-0.51)") and "antiempate" not in motivo
+            lance, info, _, _ = jogar(d, True, 0, "morre")
+            assert lance == chess.Move.from_uci("g1f3") and info["antiempate"]["decisao"].startswith("manteve(erro")
+            assert xadrex.motor is None  # morto: pensar() reabre no próximo lance
+        finally:
+            xadrex.matar_motor()
+            xadrex.COMANDO_MOTOR, xadrex.ANTIEMPATE = original
+
+
+def test_antiempate_stockfish():
+    """Xeque perpétuo já repetido nos dois ciclos (Dd4+/Dd8+ e Df6+/Df8+): o melhor lance repete com 0.00.
+    Pula se não houver Stockfish."""
+    import shutil
+    import sys
+    caminho = xadrex.COMANDO_MOTOR[0] if Path(xadrex.COMANDO_MOTOR[0]).exists() else shutil.which("stockfish")
+    if not caminho:
+        print("(pulado: Stockfish não encontrado)", file=sys.stderr)
+        return
+    b = chess.Board("6rk/7p/8/ppp5/8/r7/6PP/3Q3K w - - 0 40")
+    for u in "d1d4 g8g7 d4d8 g7g8 d8f6 g8g7 f6f8 g7g8".split():
+        b.push_uci(u)
+    original = xadrex.COMANDO_MOTOR, xadrex.ANTIEMPATE
+    xadrex.COMANDO_MOTOR, xadrex.ANTIEMPATE = [caminho], True
+    try:
+        xadrex.abrir_motor()
+        est = {"previsto_ms": 90_000, "inc_s": 0, "atraso": {"media": 500, "desvio": 100, "amostras": 5},
+               "aval_anterior": 0}
+        lance, info, _, motivo = xadrex.pensar(b, est, chess.WHITE, time.monotonic())
+        reg = info["antiempate"]
+        assert lance in b.legal_moves and reg["gatilho"] == "repeticao" and reg["freio"] == "-", reg
+        assert int(reg["candidatos"]) > 0 and reg["busca2"] != "-" and reg["decisao"] in ("desviou", "manteve"), reg
+        assert (reg["decisao"] == "desviou") == ("antiempate-desviou" in motivo)
+    finally:
+        xadrex.matar_motor()
+        xadrex.COMANDO_MOTOR, xadrex.ANTIEMPATE = original
+
+
 def test_sem_motor_nao_inicia():
     import builtins
     with tempfile.TemporaryDirectory() as d:
