@@ -1,4 +1,4 @@
-"""Adaptadores dos dois programas comparados na arena.
+"""Adaptadores dos jogadores da arena (xadrex, xadrex+ae, bea, fraco).
 
 Interface comum (duck typing, sem classe base):
     nome                       -> str
@@ -69,24 +69,66 @@ class Bea:
                 pass
 
 
+class Fraco:
+    """Equipe mais fraca: Stockfish com Skill Level baixo, busca fixa curta e 1 thread. Um processo por partida
+    (como o Bea). Não reproduz nenhum programa real; é um adversário de referência para o anti-empate."""
+    nome = "fraco"
+
+    def __init__(self, skill=5, tempo_s=1.0):
+        self.skill, self.tempo_s = skill, tempo_s
+        self.eventos = []
+        self.engine = None
+
+    def iniciar_partida(self, cor, base_ms, inc_s):
+        self.encerrar_partida()
+        self.engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH)  # fora do relógio
+        self.engine.configure({"Threads": 1, "Skill Level": self.skill})
+
+    def lance(self, board, relogio_ms):
+        self.eventos = []
+        return self.engine.play(board.copy(), chess.engine.Limit(time=self.tempo_s)).move
+
+    def encerrar_partida(self):
+        e, self.engine = self.engine, None
+        if e is not None:
+            try:
+                e.quit()
+            except Exception:
+                pass
+
+
 class Xadrex:
-    """Usa o código REAL de xadrex/xadrex.py + tempo.py, reproduzindo o fluxo de `partida()`/`jogar_nosso_lance()`.
+    """Usa o código REAL de xadrex/xadrex.py + tempo.py, reproduzindo o fluxo de `partida()` com o relógio
+    automático (commits f091a20 e 215637e).
+
+    `antiempate` vira `xadrex.ANTIEMPATE` (lido por pensar em tempo de execução). A atribuição é feita mesmo que o
+    módulo ainda não defina o atributo; nesse caso não tem efeito e `antiempate_no_modulo` fica False.
+    Como o motor do xadrex é global no módulo, só cabe UM adaptador Xadrex por processo.
 
     Diferenças em relação ao programa interativo (todas exigidas pela automação):
     - COMANDO_MOTOR aponta para o binário da arena (--stockfish; OPCOES_MOTOR originais mantidas).
-    - A leitura do relógio físico é simulada: quando tempo.precisa_leitura() pede, chama calibrar() com o
-      relógio da arena truncado para segundos inteiros (o que o operador veria em mm:ss).
+    - Relógio automático com medição perfeita: na arena o relógio volta a correr no instante em que a busca
+      começa e toda a parte humana (ouvir, digitar, anunciar, mover, bater) vem depois do lance. Por isso o
+      relógio em t0 é o relógio da arena (equivale a relogio_ao_pensar com OUVIR_MS exato e digitação zero) e o
+      fechamento do lance anterior passa por tempo.fechar_lance numa linha do tempo virtual que reproduz o gasto
+      real. O erro de OUVIR_MS (risco D7) e o ENTER esquecido NÃO são simulados.
+    - Leitura do relógio físico só quando xadrex.leitura_obrigatoria() pede (na prática, só antes do 1º lance,
+      que ainda não foi medido, e com relógio abaixo de 2 min): calibrar() com o relógio da arena truncado para
+      segundos inteiros (o que o operador veria em mm:ss).
     - Não chama jogar_nosso_lance/salvar/iniciar/encerrar: nada é gravado em partida_atual.json nem em logs/.
+    - O fluxo antigo (previsto -= gasto + atraso médio, k += 1) foi removido; ele está no commit 1fa1223.
     """
-    nome = "xadrex"
 
-    def __init__(self):
+    def __init__(self, antiempate=False):
         sys.dont_write_bytecode = True  # não criar __pycache__ dentro do repo xadrex
         if str(PASTA_XADREX) not in sys.path:
             sys.path.insert(0, str(PASTA_XADREX))
         import tempo
         import xadrex
         xadrex.COMANDO_MOTOR = [STOCKFISH]
+        self.antiempate_no_modulo = hasattr(xadrex, "ANTIEMPATE")
+        setattr(xadrex, "ANTIEMPATE", bool(antiempate))  # as duas variantes gravam: a base fica explicitamente False
+        self.nome = "xadrex+ae" if antiempate else "xadrex"
         self.x, self.tempo = xadrex, tempo
         self.est = None
         self.eventos = []
@@ -100,40 +142,57 @@ class Xadrex:
             "previsto_ms": base_ms,
             "k": 0,
             "exigir_leitura": False,
+            "medido": False,
+            "folga_ms": 0,
             "atraso": asdict(self.tempo.AtrasoHumano()),
             "aval_anterior": None,
         }
         self.nossa = cor
-        self.leituras = self.leituras_rejeitadas = 0
+        self.aberto = None  # nosso último lance, à espera do fechamento (o ENTER ao bater o relógio)
         self.x.abrir_motor()  # como main(): motor aberto antes da partida, fora do relógio
+
+    def fechar_anterior(self, relogio_ms):
+        """fechar_relogio() do lance anterior. Linha do tempo virtual em segundos: t0 = 0; fim = gasto total do
+        lance (busca + atraso, tirado do relógio da arena); inicio = OUVIR_MS depois de t0, para que
+        gasto = (fim - inicio) + OUVIR_MS seja exatamente o gasto real (a arena não tem tempo antes de t0)."""
+        est, a = self.est, self.aberto
+        inc_ms = est["inc_s"] * 1000
+        gasto_s = (a["relogio"] - relogio_ms + inc_ms) / 1000
+        est["previsto_ms"], gasto, humano = self.tempo.fechar_lance(
+            a["relogio"], self.tempo.OUVIR_MS / 1000, 0.0, gasto_s, a["busca"], inc_ms)
+        est["medido"] = gasto is not None  # ENTRADA_SIMPLES não se aplica: a arena simula o leitor de teclas
+        atraso = self.tempo.AtrasoHumano(**est["atraso"])
+        atraso.observar(humano)
+        est["atraso"] = asdict(atraso)
+        self.eventos.append(f"humano={humano / 1000:.1f}s")
 
     def lance(self, board, relogio_ms):
         self.eventos = []
         x, est = self.x, self.est
-        # em partida(): a leitura é pedida ao entrar o lance adversário, antes do nosso lance
-        if est.get("exigir_leitura") or self.tempo.precisa_leitura(est["previsto_ms"], est["k"]):
+        if self.aberto:
+            self.fechar_anterior(relogio_ms)
+        # em partida(): o lance adversário entra com leitura se leitura_obrigatoria(); senão relogio_ao_pensar
+        if x.leitura_obrigatoria(est):
             leitura = max(0, math.floor(relogio_ms / 1000)) * 1000
             if x.calibrar(est, leitura):
-                self.leituras += 1
                 self.eventos.append(f"calibrou={x.fmt_relogio(leitura)}")
             else:  # o programa real recusaria e o operador teria de conferir; aqui só registramos
-                self.leituras_rejeitadas += 1
+                est["previsto_ms"] = relogio_ms
                 self.eventos.append(f"leitura-rejeitada={x.fmt_relogio(leitura)}")
-        # daqui em diante: espelho de jogar_nosso_lance() (xadrex.py, linhas 283-292)
+        else:
+            est["previsto_ms"] = relogio_ms
+        # daqui em diante: espelho de jogar_nosso_lance()
         t0 = time.monotonic()
-        relogio = est["previsto_ms"]
         motor_antes = x.motor
         lance, info, controle, motivo = x.pensar(board.copy(), est, self.nossa, t0)
         if x.motor is not motor_antes:  # pensar() reabriu o motor (falha recuperada na 2ª tentativa)
             self.eventos.append("motor-reaberto")
-        gasto = time.monotonic() - t0
-        atraso = self.tempo.AtrasoHumano(**est["atraso"])
-        est["previsto_ms"] = relogio - gasto * 1000 + est["inc_s"] * 1000 - atraso.media
-        est["k"] += 1
+        busca_ms = (time.monotonic() - t0) * 1000
         if controle.aval is not None:
             est["aval_anterior"] = controle.aval
         if any(m in motivo for m in ("falha", "travou", "fallback")):
             self.eventos.append(f"recuperou={motivo}")
+        self.aberto = {"relogio": relogio_ms, "busca": busca_ms}
         return lance
 
     def encerrar_partida(self):

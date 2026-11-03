@@ -1,6 +1,7 @@
-"""Arena de partidas automáticas: xadrex x bea, com relógio, atraso humano simulado e regras do edital.
+"""Arena de partidas automáticas entre dois jogadores (--a e --b), com relógio, atraso humano simulado e regras
+do edital. Jogadores: xadrex, xadrex+ae (anti-empate ligado), bea (notebook, forte) e fraco (Stockfish Skill baixo).
 
-Uso (ver --help):  python3 arena/arena.py --games 10 --seed 42
+Uso (ver --help):  python3 arena/arena.py --a xadrex --b bea --games 10 --seed 42
 Saídas em arena/resultados/<nome>/: partidas.pgn, partidas.jsonl, resumo.json.
 """
 import argparse
@@ -31,8 +32,27 @@ ABERTURAS = [
     ("Inglesa", "c2c4 e7e5 b1c3 b8c6 g2g3 g7g6 f1g2 f8g7"),
     ("Nimzo-India", "d2d4 g8f6 c2c4 e7e6 b1c3 f8b4"),
 ]
-DESVIO = ("bea: notebook index.ipynb (celula 0) reimplementado (original: /opt/homebrew/bin/stockfish), "
-          "binario {sf}; xadrex: COMANDO_MOTOR trocado do .exe Windows (SF19) para {sf}")
+JOGADORES = ("xadrex", "xadrex+ae", "bea", "fraco")
+DESVIOS = {
+    "bea": "bea: notebook index.ipynb (celula 0) reimplementado (original: /opt/homebrew/bin/stockfish), binario {sf}",
+    "xadrex": "xadrex: COMANDO_MOTOR trocado do .exe Windows (SF19) para {sf}; relogio automatico com medicao "
+              "perfeita (erro de OUVIR_MS nao simulado)",
+    "fraco": "fraco: Stockfish {sf}, Skill Level {skill}, {tempo:g} s por lance, 1 thread (adversario de referencia)",
+}
+
+
+def desvio(args):
+    tipos = dict.fromkeys("xadrex" if n.startswith("xadrex") else n for n in (args.a, args.b))
+    return "; ".join(DESVIOS[t].format(sf=args.stockfish, skill=args.fraco_skill, tempo=args.fraco_tempo)
+                     for t in tipos)
+
+
+def criar_jogador(nome, args):
+    if nome == "bea":
+        return modelos.Bea()
+    if nome == "fraco":
+        return modelos.Fraco(args.fraco_skill, args.fraco_tempo)
+    return modelos.Xadrex(antiempate=nome == "xadrex+ae")
 
 
 def carregar_aberturas():
@@ -66,8 +86,14 @@ def fmt_clk(ms):
     return f"{int(s // 3600)}:{int(s % 3600 // 60):02d}:{s % 60:04.1f}"
 
 
-def jogar_partida(n, abertura, jogadores, args, rng):
-    """jogadores: {chess.WHITE: adaptador, chess.BLACK: adaptador}. Devolve (registro, jogo PGN)."""
+def pontos_310(v, e, d):
+    """Pontuação do torneio: vitória 3, empate 1, derrota 0. Devolve (pontos de A, pontos de B)."""
+    return 3 * v + e, 3 * d + e
+
+
+def jogar_partida(n, abertura, jogadores, jogador_a, args, rng):
+    """jogadores: {chess.WHITE: adaptador, chess.BLACK: adaptador}; jogador_a: o adaptador de --a (ponto de vista
+    do placar). Devolve (registro, jogo PGN)."""
     nome_ab, lances_ab = abertura
     base_ms, inc_ms = args.base_min * 60_000, args.inc_s * 1000
     board = chess.Board()
@@ -132,7 +158,7 @@ def jogar_partida(n, abertura, jogadores, args, rng):
 
     jogo = chess.pgn.Game()
     h = jogo.headers
-    h["Event"] = "Arena xadrex x bea"
+    h["Event"] = f"Arena {args.a} x {args.b}"
     h["Site"] = "local"
     h["Date"] = datetime.now().strftime("%Y.%m.%d")
     h["Round"] = str(n)
@@ -162,11 +188,11 @@ def jogar_partida(n, abertura, jogadores, args, rng):
                 "relogio_min_s": round(st["relogio_min_ms"] / 1000, 2), "relogio_final_s": round(relogio[c] / 1000, 2),
                 "ilegais": st["ilegais"], "falhas": st["falhas"], "eventos": st["eventos"]}
 
-    cor_x = next(c for c, j in jogadores.items() if j.nome == "xadrex")
-    pontos_x = {"1/2-1/2": 0.5, vitoria_de(cor_x): 1.0}.get(resultado, 0.0)
+    cor_a = next(c for c, j in jogadores.items() if j is jogador_a)
+    pontos_a = {"1/2-1/2": 0.5, vitoria_de(cor_a): 1.0}.get(resultado, 0.0)
     registro = {"partida": n, "abertura": nome_ab, "brancas": h["White"], "pretas": h["Black"],
-                "resultado": resultado, "motivo": motivo, "meios_lances": board.ply(),
-                "pontos_xadrex": pontos_x, "cor_xadrex": "brancas" if cor_x == chess.WHITE else "pretas",
+                "a": args.a, "b": args.b, "resultado": resultado, "motivo": motivo, "meios_lances": board.ply(),
+                "pontos_a": pontos_a, "cor_a": "brancas" if cor_a == chess.WHITE else "pretas",
                 "brancas_stats": resumo_lado(chess.WHITE), "pretas_stats": resumo_lado(chess.BLACK)}
     return registro, jogo
 
@@ -177,7 +203,7 @@ def elo(p):
 
 
 def estatisticas(pontos):
-    """Placar e Elo (IC 95% pelo desvio-padrão da pontuação por partida) do ponto de vista do xadrex."""
+    """Placar, pontos 3-1-0 e Elo (IC 95% pelo desvio-padrão da pontuação por partida) do ponto de vista de A."""
     n = len(pontos)
     if n == 0:
         return {"partidas": 0}
@@ -186,18 +212,21 @@ def estatisticas(pontos):
     ep = statistics.pstdev(pontos) / math.sqrt(n)
     lo, hi = max(0.0, p - 1.96 * ep), min(1.0, p + 1.96 * ep)
     fmt = lambda x: None if x is None else round(x, 1)
-    out = {"partidas": n, "vitorias": v, "empates": e, "derrotas": n - v - e, "pontuacao_pct": round(100 * p, 1),
-           "elo": fmt(elo(p)), "elo_ic95": [fmt(elo(lo)), fmt(elo(hi))]}
+    pa, pb = pontos_310(v, e, n - v - e)
+    out = {"partidas": n, "vitorias": v, "empates": e, "derrotas": n - v - e, "pontos_310_a": pa, "pontos_310_b": pb,
+           "pontuacao_pct": round(100 * p, 1), "elo": fmt(elo(p)), "elo_ic95": [fmt(elo(lo)), fmt(elo(hi))]}
     # 0%/100% (ou IC tocando os extremos): Elo infinito, informado em texto em vez de quebrar a conta
     txt = lambda q: "-inf" if q <= 0 else "+inf" if q >= 1 else f"{elo(q):+.0f}"
     out["elo_txt"] = f"{txt(p)} [{txt(lo)}, {txt(hi)}]"
     return out
 
 
-def resumo(registros):
-    r = {"geral": estatisticas([x["pontos_xadrex"] for x in registros]),
-         "xadrex_de_brancas": estatisticas([x["pontos_xadrex"] for x in registros if x["cor_xadrex"] == "brancas"]),
-         "xadrex_de_pretas": estatisticas([x["pontos_xadrex"] for x in registros if x["cor_xadrex"] == "pretas"]),
+def resumo(registros, a, b):
+    """Ponto de vista de A. Chaves: geral, a_de_brancas, a_de_pretas, motivos."""
+    r = {"a": a, "b": b,
+         "geral": estatisticas([x["pontos_a"] for x in registros]),
+         "a_de_brancas": estatisticas([x["pontos_a"] for x in registros if x["cor_a"] == "brancas"]),
+         "a_de_pretas": estatisticas([x["pontos_a"] for x in registros if x["cor_a"] == "pretas"]),
          "motivos": {}}
     for x in registros:
         r["motivos"][x["motivo"]] = r["motivos"].get(x["motivo"], 0) + 1
@@ -205,17 +234,22 @@ def resumo(registros):
 
 
 def imprimir_resumo(r):
-    print("\n=== RESUMO (ponto de vista do xadrex) ===")
-    for chave in ("geral", "xadrex_de_brancas", "xadrex_de_pretas"):
+    print(f"\n=== RESUMO (ponto de vista de {r['a']}, contra {r['b']}) ===")
+    for chave, rotulo in (("geral", "geral"), ("a_de_brancas", f"{r['a']} de brancas"),
+                          ("a_de_pretas", f"{r['a']} de pretas")):
         s = r[chave]
         if s["partidas"]:
-            print(f"{chave:18} +{s['vitorias']} ={s['empates']} -{s['derrotas']}  ({s['partidas']} partidas) "
-                  f"{s['pontuacao_pct']:5.1f}%  Elo {s['elo_txt']}")
+            print(f"{rotulo:20} +{s['vitorias']} ={s['empates']} -{s['derrotas']}  ({s['partidas']} partidas) "
+                  f"3-1-0 {s['pontos_310_a']} x {s['pontos_310_b']}  {s['pontuacao_pct']:5.1f}%  Elo {s['elo_txt']}")
     print("motivos:", ", ".join(f"{k}: {v}" for k, v in r["motivos"].items()))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--a", choices=JOGADORES, default="xadrex", help="jogador A (ponto de vista do placar)")
+    ap.add_argument("--b", choices=JOGADORES, default="bea", help="jogador B")
+    ap.add_argument("--fraco-skill", type=int, default=5, help="Skill Level do adversário fraco (0-20)")
+    ap.add_argument("--fraco-tempo", type=float, default=1.0, help="segundos por lance do adversário fraco")
     ap.add_argument("--games", type=int, default=10, help="total de partidas (pares por abertura, cores trocadas)")
     ap.add_argument("--base-min", type=float, default=10.0)
     ap.add_argument("--inc-s", type=float, default=0.0)
@@ -230,8 +264,16 @@ def main():
     args = ap.parse_args()
     if not args.stockfish:
         ap.error("Stockfish não encontrado: use --stockfish CAMINHO ou a variável ARENA_STOCKFISH")
+    if args.a == args.b:
+        ap.error(f"--a e --b são o mesmo jogador ({args.a})")
+    if args.a.startswith("xadrex") and args.b.startswith("xadrex"):
+        ap.error("xadrex x xadrex+ae não roda no mesmo processo: o motor do xadrex é global no módulo e "
+                 "ANTIEMPATE vale para os dois lados. Compare de forma indireta (cada variante contra o mesmo "
+                 "adversário, mesma seed): python3 arena/lote.py")
     modelos.STOCKFISH = args.stockfish
-    args.desvio = DESVIO.format(sf=args.stockfish)
+    args.desvio = desvio(args)
+    if not 0 <= args.fraco_skill <= 20 or args.fraco_tempo <= 0:
+        ap.error("--fraco-skill vai de 0 a 20 e --fraco-tempo precisa ser > 0")
     if (args.games < 1 or args.base_min <= 0 or args.inc_s < 0 or args.max_plies < 1
             or (args.delay_max > 0 and not 0 <= args.delay_min <= args.delay_max)):
         ap.error("parâmetros inválidos")
@@ -247,35 +289,42 @@ def main():
     pasta = Path(__file__).resolve().parent / "resultados" / nome
     pasta.mkdir(parents=True, exist_ok=False)
     rng = random.Random(args.seed)
-    bea, xadrex = modelos.Bea(), modelos.Xadrex()
+    ja, jb = criar_jogador(args.a, args), criar_jogador(args.b, args)
+    args.antiempate_no_modulo = None  # None: nenhum xadrex no run
+    for j in (ja, jb):
+        if isinstance(j, modelos.Xadrex):
+            args.antiempate_no_modulo = j.antiempate_no_modulo
+            if not j.antiempate_no_modulo:
+                print(f"aviso: xadrex.py atual não define ANTIEMPATE; a arena atribuiu ANTIEMPATE = "
+                      f"{j.x.ANTIEMPATE} mesmo assim, mas sem efeito ({j.nome} joga como o xadrex base)", flush=True)
 
     atraso = f"{args.delay_min:g}-{args.delay_max:g}s" if args.delay_max > 0 else "desligado"
-    print(f"run {nome} | {args.games} partidas | {args.base_min:g} min + {args.inc_s:g} s | atraso {atraso} | "
-          f"seed {args.seed} | {args.motor_nome}", flush=True)
+    print(f"run {nome} | {args.a} x {args.b} | {args.games} partidas | {args.base_min:g} min + {args.inc_s:g} s | "
+          f"atraso {atraso} | seed {args.seed} | {args.motor_nome}", flush=True)
     print(f"desvio conhecido: {args.desvio}", flush=True)
     registros = []
     for i in range(args.games):
         abertura = aberturas[(i // 2) % len(aberturas)]
-        x_brancas = i % 2 == 0
-        jog = {chess.WHITE: xadrex if x_brancas else bea, chess.BLACK: bea if x_brancas else xadrex}
+        a_brancas = i % 2 == 0
+        jog = {chess.WHITE: ja if a_brancas else jb, chess.BLACK: jb if a_brancas else ja}
         print(f"[{i + 1}/{args.games}] {jog[chess.WHITE].nome} x {jog[chess.BLACK].nome} | {abertura[0]} ...",
               flush=True)
         t = time.monotonic()
-        reg, jogo = jogar_partida(i + 1, abertura, jog, args, rng)
+        reg, jogo = jogar_partida(i + 1, abertura, jog, ja, args, rng)
         registros.append(reg)
         with open(pasta / "partidas.pgn", "a", encoding="utf-8") as f:
             print(jogo, file=f, end="\n\n")
         with open(pasta / "partidas.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(reg, ensure_ascii=False) + "\n")
-        r = resumo(registros)
+        r = resumo(registros, args.a, args.b)
         r["config"] = {k: v for k, v in vars(args).items()}
         r["desvio_conhecido"] = args.desvio
         (pasta / "resumo.json").write_text(json.dumps(r, indent=1, ensure_ascii=False), encoding="utf-8")
         g = r["geral"]
         print(f"    -> {reg['resultado']} ({reg['motivo']}), {reg['meios_lances']} meios-lances, "
               f"{time.monotonic() - t:.0f}s | relógio final b={reg['brancas_stats']['relogio_final_s']}s "
-              f"p={reg['pretas_stats']['relogio_final_s']}s | placar xadrex +{g['vitorias']} ={g['empates']} "
-              f"-{g['derrotas']}", flush=True)
+              f"p={reg['pretas_stats']['relogio_final_s']}s | placar {args.a} +{g['vitorias']} ={g['empates']} "
+              f"-{g['derrotas']} (3-1-0 {g['pontos_310_a']} x {g['pontos_310_b']})", flush=True)
     imprimir_resumo(r)
     print(f"\narquivos em {pasta}")
 
