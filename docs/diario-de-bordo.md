@@ -32,7 +32,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | f091a20 |
 | — Testar o leitor de teclas no Windows (ou usar a chave `XADREX_ENTRADA_SIMPLES`, D9) | pendente | |
-| 4. Anti-empate com risco limitado | implementada (desligada por padrão, chave `XADREX_ANTIEMPATE`, D10); validação na arena pendente | commit "feat: anti-empate opcional com risco limitado" (hash a registrar) |
+| 4. Anti-empate com risco limitado | implementada (desligada por padrão, chave `XADREX_ANTIEMPATE`, D10); validação na arena pendente | cf518f7 |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
 | — Incremento oficial | confirmado: 10+0, relógio físico (organização, 03/11/2026) | |
 
