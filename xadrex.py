@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+import sys
 import time
 from dataclasses import asdict
 from datetime import datetime
@@ -396,8 +397,11 @@ def main():
     try:
         try:  # antes das perguntas: na retomada, o relógio informado já não inclui o tempo de abrir o motor
             abrir_motor()
-        except Exception as e:
-            print(f"!! motor não abriu ({e!r}); vou tentar de novo no nosso lance")
+        except Exception as e:  # sem motor, pensar() jogaria o primeiro lance legal: melhor não começar
+            print(f"!! O motor não abriu ({e!r}).\n   Esperado em: {COMANDO_MOTOR[0]}\n"
+                  "   Veja a seção 'Instalação' do README. Nenhuma partida foi iniciada"
+                  + ("; a partida salva continua guardada." if ESTADO.exists() else "."))
+            return 1
         est, board = iniciar()
         with open(est["log"], "a", encoding="utf-8", buffering=1) as log:
             partida(est, board, log)
@@ -406,4 +410,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

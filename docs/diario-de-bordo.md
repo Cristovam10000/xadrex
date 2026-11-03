@@ -28,8 +28,8 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | --- | --- | --- |
 | 0. Diagnóstico comparativo (chess-challenge × xadrex) | feita | — |
 | 0. Arena de partidas automáticas | feita; match de 10 partidas em 10+0 rodando em 03/11 | — |
-| 1. Padrão de tempo 10+0 + teste de simulação 10+0 | feita (60 lances nossos: 0/50 perdas; 80 lances: 19/50, limite conhecido) | neste commit |
-| 2. Abortar antes da partida se o motor não abrir | pendente | |
+| 1. Padrão de tempo 10+0 + teste de simulação 10+0 | feita (60 lances nossos: 0/50 perdas; 80 lances: 19/50, limite conhecido) | 60ebb8d |
+| 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | neste commit |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | pendente | |
 | 4. Anti-empate com risco limitado | adiada (depois do prazo, só com validação na arena) | |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
@@ -47,6 +47,7 @@ Teste (`test_simulacao_sem_perder_por_tempo`, equipe com 3–8 s, mesma contagem
 
 ### D3 — 03/11/2026 — Motor ausente deve parar o programa antes da partida
 Hoje, sem o `.exe`, o programa só avisa e depois joga o "primeiro lance legal" (`pensar`, último recurso). O operador não percebe. Parar antes da partida não cria risco durante o jogo.
+Implementado: `main()` devolve 1 antes de qualquer pergunta (o `iniciar()` nem roda, então a partida salva fica intacta). Durante a partida, a recuperação de `pensar()` (reabrir o motor, último recurso) não mudou.
 
 ### D4 — 03/11/2026 — Relógio automático em vez de leitura digitada
 Problema: abaixo de 2 min o programa exige digitar o relógio físico a cada lance, justamente quando falta tempo. Proposta: o programa espelha o nosso relógio.

@@ -130,6 +130,26 @@ def test_motor_travado():
             xadrex.COMANDO_MOTOR = original
 
 
+def test_sem_motor_nao_inicia():
+    import builtins
+    with tempfile.TemporaryDirectory() as d:
+        originais = xadrex.COMANDO_MOTOR, xadrex.ESTADO, builtins.input
+        xadrex.COMANDO_MOTOR = [str(Path(d) / "nao-existe.exe")]
+        xadrex.ESTADO = Path(d) / "partida_atual.json"
+        salvo = '{"cor": "w", "lances": ["e2e4"]}'
+        xadrex.ESTADO.write_text(salvo, encoding="utf-8")
+
+        def sem_perguntas(*_):
+            raise AssertionError("não pode perguntar nada sem motor")
+        builtins.input = sem_perguntas
+        try:
+            assert xadrex.main() == 1  # código de saída != 0, sem iniciar partida
+            assert xadrex.ESTADO.read_text(encoding="utf-8") == salvo  # retomada preservada
+            assert [p.name for p in Path(d).iterdir()] == ["partida_atual.json"]
+        finally:
+            xadrex.COMANDO_MOTOR, xadrex.ESTADO, builtins.input = originais
+
+
 if __name__ == "__main__":
     for nome, f in list(globals().items()):
         if nome.startswith("test_"):

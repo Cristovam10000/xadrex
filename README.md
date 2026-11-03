@@ -40,6 +40,9 @@ O `.exe` (103 MB) não fica no repositório porque excede o limite de arquivo do
 .venv\Scripts\python.exe xadrex.py
 ```
 
+Se o motor não abrir (ex.: `.exe` fora de `engines/`), o programa mostra o caminho esperado e fecha com código 1
+sem iniciar a partida; uma partida salva continua guardada para a retomada. Confira a seção "Instalação".
+
 Informe nossa cor, tempo base e incremento. O padrão é 10 min + 0 s (Errata nº 01): sem incremento, relógio
 físico (confirmado com a organização). No turno do adversário, digite o lance
 anunciado em UCI (`e2e4`, `e7e8q`). Nosso lance aparece como `>>> NOSSO LANCE: ...`.
