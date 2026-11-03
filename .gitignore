@@ -8,3 +8,6 @@ partida_atual.tmp
 # logs de teste; os de partida vão para a banca à parte
 logs/
 partida_invalida_*.json
+# runs da arena são descartáveis; o match 10+0 fica como evidência registrada
+arena/resultados/*
+!arena/resultados/match_10min/

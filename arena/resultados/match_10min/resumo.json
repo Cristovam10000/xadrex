@@ -1,0 +1,58 @@
+{
+ "geral": {
+  "partidas": 10,
+  "vitorias": 4,
+  "empates": 6,
+  "derrotas": 0,
+  "pontuacao_pct": 70.0,
+  "elo": 147.2,
+  "elo_ic95": [
+   33.6,
+   303.8
+  ],
+  "elo_txt": "+147 [+34, +304]"
+ },
+ "xadrex_de_brancas": {
+  "partidas": 5,
+  "vitorias": 3,
+  "empates": 2,
+  "derrotas": 0,
+  "pontuacao_pct": 80.0,
+  "elo": 240.8,
+  "elo_ic95": [
+   59.9,
+   null
+  ],
+  "elo_txt": "+241 [+60, +inf]"
+ },
+ "xadrex_de_pretas": {
+  "partidas": 5,
+  "vitorias": 1,
+  "empates": 4,
+  "derrotas": 0,
+  "pontuacao_pct": 60.0,
+  "elo": 70.4,
+  "elo_ic95": [
+   -52.7,
+   215.2
+  ],
+  "elo_txt": "+70 [-53, +215]"
+ },
+ "motivos": {
+  "tempo esgotado (bea)": 4,
+  "insufficient_material": 2,
+  "tripla repeticao": 4
+ },
+ "config": {
+  "games": 10,
+  "base_min": 10.0,
+  "inc_s": 0.0,
+  "delay_min": 3.0,
+  "delay_max": 8.0,
+  "seed": 2026,
+  "max_plies": 300,
+  "nome": "match_10min",
+  "motor_nome": "Stockfish 19"
+ },
+ "desvio_conhecido": "bea: notebook index.ipynb (celula 0) reimplementado, mesmo binario /opt/homebrew/bin/stockfish; xadrex: COMANDO_MOTOR trocado do .exe Windows (SF19) para o SF19 do homebrew"
+}

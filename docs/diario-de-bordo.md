@@ -27,7 +27,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | Fase | Situação | Commit |
 | --- | --- | --- |
 | 0. Diagnóstico comparativo (chess-challenge × xadrex) | feita | — |
-| 0. Arena de partidas automáticas | feita; match de 10 partidas em 10+0 rodando em 03/11 | — |
+| 0. Arena de partidas automáticas | feita; trazida para arena/ | — |
 | 1. Padrão de tempo 10+0 + teste de simulação 10+0 | feita (60 lances nossos: 0/50 perdas; 80 lances: 19/50, limite conhecido) | 60ebb8d |
 | 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | neste commit |
@@ -75,10 +75,20 @@ Pontuação 3-1-0: desviar do empate compensa se 2·P(vitória) > P(derrota). Ma
 - Digitar durante a vez do adversário antes do anúncio (ex.: corrigir algo) antecipa o início: o relógio interno conta a mais (seguro, mas pensa menos).
 - Na retomada, o relógio informado vale para o momento da pergunta; se o nosso relógio físico estava correndo, o tempo entre responder e começar a digitar não é descontado (alguns segundos). Por isso a retomada volta à regra antiga de leitura obrigatória abaixo de 2 min.
 
+### D8 — 03/11/2026 — Leitura do match 10+0 na arena
+No tabuleiro os dois empataram todas as partidas que terminaram sem bandeira: mesmo motor, sem diferença de força decisiva nesse tempo. A vantagem veio da gestão de tempo (o bea gasta 2 s fixos mais a parte humana e estoura em partidas longas).
+Conclusão para a equipe: o ganho competitivo está em não perder por tempo e, contra outro Stockfish, em sair de empates (item 4 do backlog), e não em "força de motor". 10 partidas é amostra pequena; o IC exclui zero, mas é largo.
+
 ## Arena
 
-Fica em `/Users/bea/workspace/xadrez/arena/` (fora do repositório; será trazida para cá quando o match de 03/11 terminar). Roda o xadrex (código real, via `xadrex.pensar`) contra o notebook da Bea reimplementado, com relógio, atraso humano simulado (3–8 s), aberturas balanceadas com cores trocadas, PGN e Elo com intervalo de confiança.
+Fica em `arena/` (como rodar e limites em `arena/README.md`). Roda o xadrex (código real, via `xadrex.pensar`) contra o notebook da Bea reimplementado, com relógio, atraso humano simulado (3–8 s), aberturas balanceadas com cores trocadas, PGN e Elo com intervalo de confiança.
 
-Resultado do match de 03/11: pendente.
+Resultado do match de 03/11 (`arena/resultados/match_10min/resumo.json`): 10 partidas em 10+0, atraso 3–8 s, seed 2026, xadrex na versão do commit 5b2428f (antes das fases 1–3).
+
+- xadrex +4 =6 -0, 70%, Elo +147 [IC95 +34, +304]. De brancas +3 =2 -0; de pretas +1 =4 -0.
+- Motivos: 4 vitórias, todas por tempo esgotado do bea; 4 por tripla repetição; 2 por material insuficiente.
+- Pontuação do torneio (3-1-0): xadrex 18 × bea 6.
+
+Leitura em D8.
 
 Compatibilidade depois da fase 3: a arena continua funcionando sem mudanças (`pensar`, `abrir_motor`, `calibrar`, `precisa_leitura` e o significado de `est["previsto_ms"]` em `pensar` foram mantidos; campos novos do estado são lidos com `.get`). Mas ela replica a **contagem antiga** (`previsto -= gasto + atraso médio`, `k += 1`, leitura simulada pela regra de `precisa_leitura`), então não mede o relógio automático. Para medir, `modelos.Xadrex.lance(board, relogio_ms)` precisaria: usar `relogio_ms` (o relógio real da arena, que é o que o relógio automático enxerga, salvo o erro de `OUVIR_MS`) como `est["previsto_ms"]` e marcar `est["medido"] = True`; ensinar ao atraso a parte humana do lance anterior (`relogio_ms_anterior − busca_anterior + incremento − relogio_ms`); trocar a leitura por `xadrex.leitura_obrigatoria(est)` (fica falsa); e não incrementar `k`.
