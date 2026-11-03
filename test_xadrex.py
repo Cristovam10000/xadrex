@@ -1,13 +1,14 @@
 """Testes rápidos: .venv\\Scripts\\python.exe test_xadrex.py"""
 import json
 import tempfile
+import time
 from pathlib import Path
 
 import chess
 import chess.engine
 
 import xadrex
-from xadrex import carregar_estado, desfazer, fim_de_jogo, fmt_aval, ler_lance, ler_relogio
+from xadrex import calibrar, carregar_estado, desfazer, fim_de_jogo, fmt_aval, ler_lance, ler_relogio
 
 
 def test_ler_lance():
@@ -67,7 +68,9 @@ def test_fim_de_jogo():
 def test_carregar_estado():
     with tempfile.TemporaryDirectory() as d:
         xadrex.ESTADO = Path(d) / "partida_atual.json"
-        for conteudo in ("{", "{}", json.dumps({"cor": "w", "nosso_ms": 1, "inc_s": 0, "log": "x", "lances": ["e2e5"]})):
+        base = {"cor": "b", "previsto_ms": 9e5, "inc_s": 10, "k": 0, "atraso": {"media": 5000, "desvio": 2500},
+                "aval_anterior": None, "log": "x", "lances": ["e2e4"]}
+        for conteudo in ("{", "{}", json.dumps({**base, "lances": ["e2e5"]}), json.dumps({**base, "atraso": {"x": 1}})):
             xadrex.ESTADO.write_text(conteudo, encoding="utf-8")
             try:
                 carregar_estado()
@@ -76,10 +79,55 @@ def test_carregar_estado():
                 raise
             except Exception:
                 pass
-        xadrex.ESTADO.write_text(json.dumps({"cor": "b", "nosso_ms": 9e5, "inc_s": 10, "log": "x", "lances": ["e2e4"]}),
-                                 encoding="utf-8")
+        xadrex.ESTADO.write_text(json.dumps(base), encoding="utf-8")
         est, board = carregar_estado()
         assert board.turn == chess.BLACK and est["cor"] == "b"
+
+
+def test_calibrar():
+    est = {"previsto_ms": 600_000, "k": 2, "atraso": {"media": 5000, "desvio": 2500, "amostras": 0}}
+    calibrar(est, 590_000)  # 10 s a menos que o previsto em 2 lances: 5 s a mais por lance
+    assert est["atraso"]["media"] == 10_000 and est["previsto_ms"] == 590_000 and est["k"] == 0
+    calibrar(est, 500_000)  # k=0: só corrige o relógio, não aprende
+    assert est["atraso"]["media"] == 10_000 and est["previsto_ms"] == 500_000
+    antes = json.dumps(est)
+    assert not calibrar(est, 600_000) and json.dumps(est) == antes  # leitura impossível não muda nada
+
+
+MOTOR_TRAVADO = r'''
+import sys
+for linha in sys.stdin:
+    c = linha.split()
+    if not c: continue
+    if c[0] == "uci":
+        print("id name Travado\noption name Threads type spin default 1 min 1 max 512\n"
+              "option name Hash type spin default 16 min 1 max 4096\nuciok", flush=True)
+    elif c[0] == "isready":
+        print("readyok", flush=True)
+    elif c[0] == "go":  # uma iteração e depois nunca responde, nem ao stop
+        print("info depth 1 score cp 12 nodes 20 time 1 pv e2e4", flush=True)
+'''
+
+
+def test_motor_travado():
+    import sys
+    with tempfile.TemporaryDirectory() as d:
+        falso = Path(d) / "travado.py"
+        falso.write_text(MOTOR_TRAVADO, encoding="utf-8")
+        original = xadrex.COMANDO_MOTOR
+        xadrex.COMANDO_MOTOR = [sys.executable, "-u", str(falso)]
+        try:
+            for relogio, limite_s in ((20_000, 10), (5_500, 1.5)):  # com pouco relógio, o vigia não espera 3 s
+                est = {"previsto_ms": relogio, "inc_s": 0, "atraso": {"media": 5000, "desvio": 2500, "amostras": 0},
+                       "aval_anterior": None}
+                xadrex.abrir_motor()  # aberto antes, como na partida: o tempo medido é só o da busca
+                t = time.monotonic()
+                lance, info, _, motivo = xadrex.pensar(chess.Board(), est, chess.WHITE, t)
+                assert lance == chess.Move.from_uci("e2e4") and info["depth"] == 1 and "travou" in motivo
+                assert time.monotonic() - t < limite_s and xadrex.motor is None, (relogio, time.monotonic() - t)
+        finally:
+            xadrex.matar_motor()
+            xadrex.COMANDO_MOTOR = original
 
 
 if __name__ == "__main__":
