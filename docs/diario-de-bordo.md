@@ -27,10 +27,10 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | Fase | Situação | Commit |
 | --- | --- | --- |
 | 0. Diagnóstico comparativo (chess-challenge × xadrex) | feita | — |
-| 0. Arena de partidas automáticas | feita; trazida para arena/ | — |
+| 0. Arena de partidas automáticas | feita; trazida para arena/ (match 10+0: xadrex +4 =6 -0, D8) | 1fa1223 |
 | 1. Padrão de tempo 10+0 + teste de simulação 10+0 | feita (60 lances nossos: 0/50 perdas; 80 lances: 19/50, limite conhecido) | 60ebb8d |
 | 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
-| 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | neste commit |
+| 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | f091a20 |
 | — Testar o leitor de teclas no Windows (ou usar a chave `XADREX_ENTRADA_SIMPLES`, D9) | pendente | |
 | 4. Anti-empate com risco limitado | adiada (depois do prazo, só com validação na arena) | |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
