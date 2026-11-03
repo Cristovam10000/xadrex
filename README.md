@@ -70,6 +70,12 @@ gasto e as decisões do gestor (alvo, máximo, motivo da parada, atraso humano e
 por lance nosso registra o relógio automático: início (1ª tecla), fim (ENTER ou tecla), gasto medido, tempo de
 busca e parte humana medida.
 
+**Chave de emergência.** Se o leitor de teclas der problema no dia (tecla que não aparece, travamento), feche com
+`sair` e rode de novo com a entrada simples, sem mexer no código. No PowerShell:
+`$env:XADREX_ENTRADA_SIMPLES=1; .venv\Scripts\python.exe xadrex.py`; no cmd: `set XADREX_ENTRADA_SIMPLES=1` e depois
+`.venv\Scripts\python.exe xadrex.py`. Nesse modo o tempo de digitar não é medido, então a leitura do relógio
+(`e7e5 12:31`) volta a ser obrigatória a cada 8 lances nossos e abaixo de 2 min.
+
 Testes: `.venv\Scripts\python.exe test_tempo.py` e `.venv\Scripts\python.exe test_xadrex.py`.
 
 ## Gestor de tempo (autoria da equipe)

@@ -179,6 +179,39 @@ def test_ler_teclas():
         pass
 
 
+def test_entrada_simples():
+    import contextlib
+    import io
+    import sys
+    import types
+    from dataclasses import asdict
+    originais = xadrex.ENTRADA_SIMPLES, sys.stdin
+    xadrex.input = lambda prompt: "e7e5"  # sombreia o input() embutido só dentro de xadrex
+    sys.stdin = types.SimpleNamespace(isatty=lambda: True)  # "terminal": sem a chave tentaria msvcrt/termios
+    aberto = {"relogio": 600_000, "inicio": 100.0, "t0": 102.0, "busca": 3000, "mostrado": 105.0, "num": 1}
+
+    def fechar():
+        est = {"inc_s": 0, "k": 0, "atraso": asdict(xadrex.tempo.AtrasoHumano()), "exigir_leitura": False}
+        with contextlib.redirect_stdout(io.StringIO()):
+            xadrex.fechar_relogio(est, aberto, 110.0, True, io.StringIO())
+        return est
+    try:
+        xadrex.ENTRADA_SIMPLES = True
+        texto, primeira, enter = xadrex.ler_linha("> ")
+        assert texto == "e7e5" and primeira == enter  # sem instante da 1ª tecla
+        est = fechar()
+        # sem medir a digitação o relógio interno conta a menos: lance não medido e k volta a contar (regra antiga)
+        assert not est["medido"] and est["k"] == 1
+        est["k"] = xadrex.tempo.LEITURA_A_CADA
+        assert xadrex.leitura_obrigatoria(est)  # relógio em ~9:52, mas 8 lances sem leitura
+        xadrex.ENTRADA_SIMPLES = False
+        est = fechar()
+        assert est["medido"] and est["k"] == 0
+    finally:
+        del xadrex.input
+        xadrex.ENTRADA_SIMPLES, sys.stdin = originais
+
+
 def test_partida_relogio_automatico():
     """Somos pretas em 10+0, com relógio e leitor de teclas falsos. Cobre ENTER ao bater o relógio, Ctrl+C no
     prompt, ENTER esquecido (lance digitado direto), leitura opcional aceita graças à folga e 'u'."""

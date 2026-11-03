@@ -20,6 +20,8 @@ COMANDO_MOTOR = [str(RAIZ / "engines" / "stockfish-windows-x86-64-universal.exe"
 ESTADO = RAIZ / "partida_atual.json"
 LOGS = RAIZ / "logs"
 OPCOES_MOTOR = {"Threads": max(1, (os.cpu_count() or 2) - 2), "Hash": 512}
+# chave de emergência (leitor de teclas com problema no dia): input() simples, sem o instante da 1ª tecla
+ENTRADA_SIMPLES = os.environ.get("XADREX_ENTRADA_SIMPLES") == "1"
 AJUDA = ("Comandos: <lance UCI> [mm:ss do nosso relógio] | u (desfaz último par de lances) | tab | sair | fim\n"
          "Depois do nosso lance, aperte ENTER ao bater o relógio: o programa mede o nosso tempo sozinho.\n"
          "Ex.: 'e7e5 12:31' registra o lance e corrige o relógio interno com o relógio físico (opcional).")
@@ -156,8 +158,8 @@ def _eco(s):
 
 def ler_linha(prompt):
     """Linha do operador com o instante da 1ª tecla (o nosso relógio já corria). Devolve (texto, 1ª tecla, ENTER).
-    Fora de um terminal (testes, pipe) não há teclas: os dois instantes são o fim da leitura."""
-    if not sys.stdin.isatty():
+    Fora de um terminal (testes, pipe) ou com ENTRADA_SIMPLES não há teclas: os dois instantes são o fim da leitura."""
+    if ENTRADA_SIMPLES or not sys.stdin.isatty():
         texto = input(prompt)
         t = time.monotonic()
         return texto, t, t
@@ -396,7 +398,9 @@ def fechar_relogio(est, aberto, fim, por_enter, log):
     1ª tecla dele: conta a mais (lado seguro), não ensina o atraso humano e vira folga para a próxima leitura."""
     est["previsto_ms"], gasto, humano = tempo.fechar_lance(aberto["relogio"], aberto["inicio"], aberto["t0"], fim,
                                                            aberto["busca"], est["inc_s"] * 1000)
-    est["medido"] = gasto is not None
+    est["medido"] = gasto is not None and not ENTRADA_SIMPLES
+    if ENTRADA_SIMPLES:  # sem a 1ª tecla o tempo de digitar não sai do relógio interno (conta a menos): volta a
+        est["k"] += 1    # exigir leitura a cada LEITURA_A_CADA lances, como antes do relógio automático
     atraso = tempo.AtrasoHumano(**est["atraso"])
     if humano is not None and por_enter:
         atraso.observar(humano)
