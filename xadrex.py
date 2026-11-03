@@ -1,4 +1,5 @@
 """Xadrex — programa de partida do III Chess Challenge (linha de comando, offline)."""
+import codecs
 import json
 import logging
 import math
@@ -6,7 +7,7 @@ import os
 import sys
 import time
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import chess
@@ -20,7 +21,8 @@ ESTADO = RAIZ / "partida_atual.json"
 LOGS = RAIZ / "logs"
 OPCOES_MOTOR = {"Threads": max(1, (os.cpu_count() or 2) - 2), "Hash": 512}
 AJUDA = ("Comandos: <lance UCI> [mm:ss do nosso relógio] | u (desfaz último par de lances) | tab | sair | fim\n"
-         "Ex.: 'e7e5 12:31' registra o lance e calibra o gestor de tempo com o relógio físico.")
+         "Depois do nosso lance, aperte ENTER ao bater o relógio: o programa mede o nosso tempo sozinho.\n"
+         "Ex.: 'e7e5 12:31' registra o lance e corrige o relógio interno com o relógio físico (opcional).")
 
 motor = None
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # motor morto pelo vigia gera aviso inofensivo no console
@@ -101,13 +103,94 @@ def calibrar(est, leitura_ms):
     se houve lances nossos desde a última leitura, ensina ao gestor o atraso humano médio deles.
     Devolve False (sem alterar nada) se a leitura for impossível, ex.: 2:00 digitado no lugar de 0:20."""
     atraso = tempo.AtrasoHumano(**est["atraso"])
-    if not tempo.leitura_plausivel(est["previsto_ms"], est["k"], atraso, leitura_ms):
+    if not tempo.leitura_plausivel(est["previsto_ms"], est["k"], atraso, leitura_ms, est.get("folga_ms", 0)):
         return False
     if est["k"] > 0:
         atraso.observar(atraso.media + (est["previsto_ms"] - leitura_ms) / est["k"])
         est["atraso"] = asdict(atraso)
-    est["previsto_ms"], est["k"], est["exigir_leitura"] = leitura_ms, 0, False
+    est["previsto_ms"], est["k"], est["exigir_leitura"], est["folga_ms"] = leitura_ms, 0, False, 0
     return True
+
+
+def leitura_obrigatoria(est):
+    """Com o relógio automático confiável a leitura é opcional; sem ele vale a regra de precisa_leitura.
+    Depois de 'u', sempre (o lance desfeito já tinha saído do relógio interno)."""
+    return est.get("exigir_leitura") or (not est.get("medido") and tempo.precisa_leitura(est["previsto_ms"], est["k"]))
+
+
+def ler_teclas(tecla, eco):
+    """Monta uma linha tecla a tecla, com eco e backspace. Devolve (texto, instante da 1ª tecla, instante do ENTER)
+    em time.monotonic(). Ctrl+C vira KeyboardInterrupt; setas e outras teclas especiais são ignoradas."""
+    texto, primeira, escape = [], None, 0
+    while True:
+        c = tecla()
+        agora = time.monotonic()
+        if primeira is None:
+            primeira = agora
+        if escape == 1:  # sequência do terminal (setas no macOS/Linux): ESC [ ... letra final
+            escape = 2 if c in "[O" else 0
+        elif escape == 2:
+            escape = 0 if "@" <= c <= "~" else 2
+        elif c in "\r\n":
+            eco("\n")
+            return "".join(texto), primeira, agora
+        elif c == "\x03":
+            raise KeyboardInterrupt
+        elif c in "\x00\xe0":  # Windows: tecla especial chega em dois códigos; o segundo é descartado
+            tecla()
+        elif c == "\x1b":
+            escape = 1
+        elif c in "\x08\x7f":
+            if texto:
+                texto.pop()
+                eco("\b \b")
+        elif c.isprintable():
+            texto.append(c)
+            eco(c)
+
+
+def _eco(s):
+    sys.stdout.write(s)
+    sys.stdout.flush()
+
+
+def ler_linha(prompt):
+    """Linha do operador com o instante da 1ª tecla (o nosso relógio já corria). Devolve (texto, 1ª tecla, ENTER).
+    Fora de um terminal (testes, pipe) não há teclas: os dois instantes são o fim da leitura."""
+    if not sys.stdin.isatty():
+        texto = input(prompt)
+        t = time.monotonic()
+        return texto, t, t
+    _eco(prompt)
+    if os.name == "nt":
+        import msvcrt
+        return ler_teclas(msvcrt.getwch, _eco)
+    import termios
+    import tty
+    fd = sys.stdin.fileno()
+    antes = termios.tcgetattr(fd)
+    decodificar = codecs.getincrementaldecoder("utf-8")(errors="replace")
+
+    def tecla():
+        while True:
+            b = os.read(fd, 1)
+            if not b:
+                raise EOFError
+            c = decodificar.decode(b)
+            if c:
+                return c
+    try:
+        tty.setcbreak(fd)  # sem eco nem espera do ENTER; Ctrl+C continua gerando KeyboardInterrupt
+        return ler_teclas(tecla, _eco)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, antes)
+
+
+def hora(instante):
+    """time.monotonic() -> hora do relógio de parede, para o log."""
+    if instante is None:
+        return "-"
+    return f"{datetime.now() - timedelta(seconds=time.monotonic() - instante):%H:%M:%S.%f}"[:-3]
 
 
 def desenhar(board):
@@ -177,6 +260,7 @@ def iniciar():
                     r = perguntar("Nosso relógio agora (mm:ss)", fmt_relogio(est["previsto_ms"]))
                     try:
                         est["previsto_ms"], est["k"], est["exigir_leitura"] = ler_relogio(r), 0, False
+                        est["medido"], est["folga_ms"] = False, 0  # relógio automático recomeça do zero
                         return est, board
                     except ValueError:
                         print("Use mm:ss")
@@ -190,9 +274,12 @@ def iniciar():
         "cor": "w" if cor == "b" else "b",
         "base_s": base * 60,
         "inc_s": inc,
-        "previsto_ms": base * 60_000,  # nosso relógio estimado no momento em que começamos a pensar
+        "previsto_ms": base * 60_000,  # relógio interno em t0 (busca); do ENTER ao bater até o próximo lance
+                                       # adversário, o relógio de quando o nosso voltar a correr
         "k": 0,                        # lances nossos desde a última leitura do relógio físico
         "exigir_leitura": False,       # ligado após 'u': o incremento creditado pode não ter existido
+        "medido": False,               # último lance nosso fechado pelo relógio automático com todos os instantes
+        "folga_ms": 0,                 # quanto o relógio automático pode ter contado a mais (ENTER esquecido)
         "atraso": asdict(tempo.AtrasoHumano()),
         "aval_anterior": None,
         "log": str(LOGS / f"partida_{datetime.now():%Y%m%d_%H%M%S}.log"),
@@ -280,6 +367,8 @@ def pensar(board, est, nossa, t0):
 
 
 def jogar_nosso_lance(board, est, nossa, log, t0):
+    """Pensa, joga e mostra o nosso lance. Devolve o tempo de busca (ms desde t0); o relógio interno só fecha no
+    ENTER ao bater o relógio (fechar_relogio)."""
     print("... pensando")
     relogio = est["previsto_ms"]
     lance, info, controle, motivo = pensar(board, est, nossa, t0)
@@ -287,20 +376,40 @@ def jogar_nosso_lance(board, est, nossa, log, t0):
     num, san = board.fullmove_number, board.san(lance)
     board.push(lance)
     atraso = tempo.AtrasoHumano(**est["atraso"])
-    est["previsto_ms"] = relogio - gasto * 1000 + est["inc_s"] * 1000 - atraso.media
-    est["k"] += 1
     if controle.aval is not None:  # só iteração completa: linhas lowerbound/upperbound não são avaliação exata
         est["aval_anterior"] = controle.aval
     aval = fmt_aval(info.get("score"), nossa)
     print(f"\n>>> NOSSO LANCE: {lance.uci()}   ({san})")
     print(f"    aval {aval} | prof {info.get('depth', '-')} | {gasto:.1f}s (alvo {controle.alvo / 1000:.1f}s, "
-          f"parou: {motivo}) | relógio ~{fmt_relogio(est['previsto_ms'])} na próxima vez\n")
+          f"parou: {motivo}) | relógio ~{fmt_relogio(relogio - gasto * 1000)} agora\n")
     pv = " ".join(m.uci() for m in info.get("pv", []))
     registrar(log,
               f"lance={num} cor={'brancas' if nossa else 'pretas'} uci={lance.uci()} prof={info.get('depth', '-')} "
               f"nos={info.get('nodes', '-')} aval={aval} pv={pv or '-'} tempo={gasto:.2f}s "
               f"relogio_inicio={fmt_relogio(relogio)} alvo={controle.alvo / 1000:.1f}s max={controle.maximo / 1000:.1f}s "
               f"parada={motivo} atraso={atraso.media / 1000:.1f}s/{atraso.seguro / 1000:.1f}s")
+    return gasto * 1000
+
+
+def fechar_relogio(est, aberto, fim, por_enter, log):
+    """Fecha o nosso tempo no ENTER ao bater o relógio. Se o operador já digitou o lance adversário, `fim` é a
+    1ª tecla dele: conta a mais (lado seguro), não ensina o atraso humano e vira folga para a próxima leitura."""
+    est["previsto_ms"], gasto, humano = tempo.fechar_lance(aberto["relogio"], aberto["inicio"], aberto["t0"], fim,
+                                                           aberto["busca"], est["inc_s"] * 1000)
+    est["medido"] = gasto is not None
+    atraso = tempo.AtrasoHumano(**est["atraso"])
+    if humano is not None and por_enter:
+        atraso.observar(humano)
+        est["atraso"] = asdict(atraso)
+    if not por_enter:
+        est["folga_ms"] = est.get("folga_ms", 0) + (fim - aberto["mostrado"]) * 1000
+    seg = lambda ms: "-" if ms is None else f"{ms / 1000:.2f}s"  # noqa: E731
+    registrar(log, f"relogio lance={aberto['num']} inicio={hora(aberto['inicio'])} fim={hora(fim)} "
+                   f"fim_por={'enter' if por_enter else 'tecla'} gasto={seg(gasto)} busca={seg(aberto['busca'])} "
+                   f"humano={seg(humano)} relogio={fmt_relogio(est['previsto_ms'])} "
+                   f"atraso={atraso.media / 1000:.1f}s/{atraso.seguro / 1000:.1f}s")
+    print(f"(nosso relógio ~{fmt_relogio(est['previsto_ms'])}"
+          + (f"; parte humana {humano / 1000:.1f}s)" if humano is not None and por_enter else ")"))
 
 
 def encerrar(log, motivo):
@@ -314,28 +423,50 @@ def partida(est, board, log):
     print(AJUDA)
     desenhar(board)
     t0 = time.monotonic()
+    inicio = None  # 1ª tecla na vez do adversário: o nosso relógio corre desde ~OUVIR_MS antes
+    aberto = None  # nosso lance já mostrado, à espera do ENTER ao bater o relógio
     while True:
         fim = fim_de_jogo(board)  # o árbitro declara repetição e 50 lances sem reclamação
         if fim:
             encerrar(log, fim)
             return
         if board.turn == nossa:
+            relogio, num = est["previsto_ms"], board.fullmove_number
             try:
-                jogar_nosso_lance(board, est, nossa, log, t0)
+                busca = jogar_nosso_lance(board, est, nossa, log, t0)
             except KeyboardInterrupt:
                 print("\n(Ctrl+C ignorado; recalculando. Use 'sair' para fechar.)")
                 continue
+            aberto = {"relogio": relogio, "inicio": inicio, "t0": t0, "busca": busca, "mostrado": time.monotonic(),
+                      "num": num}
+            inicio = None
             salvar(est, board)
             continue
-        exigir = est.get("exigir_leitura") or tempo.precisa_leitura(est["previsto_ms"], est["k"])
+        exigir = leitura_obrigatoria(est)
+        if aberto:
+            prompt = "ENTER ao bater o relógio (ou já digite o lance do adversário): "
+        elif exigir:
+            prompt = "Lance do adversário + NOSSO RELÓGIO (ex.: e7e5 1:31): "
+        else:
+            prompt = "Lance do adversário (UCI) [mm:ss]: "
         try:
-            texto = input("Lance do adversário + NOSSO RELÓGIO (ex.: e7e5 1:31): " if exigir
-                          else "Lance do adversário (UCI) [mm:ss]: ").strip().lower()
+            texto, primeira, enter = ler_linha(prompt)
         except KeyboardInterrupt:
             print("\n(use 'sair' para fechar)")
             continue
         except EOFError:
             return
+        texto = texto.strip().lower()
+        if aberto:  # ENTER esquecido: a 1ª tecla do lance adversário fecha o nosso tempo (a mais = lado seguro)
+            fechar_relogio(est, aberto, enter if not texto else primeira, not texto, log)
+            aberto = None
+            salvar(est, board)
+            if not texto:
+                continue
+            exigir = leitura_obrigatoria(est)
+        nova = inicio is None
+        if nova:  # 1ª linha da vez do adversário; tab e linha vazia não contam (podem vir antes do lance dele)
+            inicio = primeira
         if texto == "sair":
             print(f"Estado salvo em {ESTADO.name}; rode de novo para retomar.")
             return
@@ -343,14 +474,17 @@ def partida(est, board, log):
             encerrar(log, input("Motivo (ex.: abandono, tempo, empate acordado): ").strip() or "encerrada pelo operador")
             return
         if texto in ("tab", "?"):
+            if nova:
+                inicio = None
             desenhar(board)
             print(f"lances: {' '.join(m.uci() for m in board.move_stack) or '-'}")
             print(AJUDA)
             continue
         if texto == "u":
+            inicio = None
             if desfazer(board, nossa):
-                # o incremento do lance desfeito foi creditado mas pode não existir: só a leitura física corrige
-                est["k"], est["exigir_leitura"] = 0, True
+                # o lance desfeito já saiu do relógio interno (e o incremento pode não existir): só a leitura corrige
+                est["k"], est["exigir_leitura"], est["medido"] = 0, True, False
                 registrar(log, f"# desfeito: voltou para {len(board.move_stack)} meios-lances")
                 salvar(est, board)
                 print("Desfeito. Digite o lance correto do adversário.")
@@ -359,6 +493,8 @@ def partida(est, board, log):
             continue
         partes = texto.split()
         if not partes or len(partes) > 2:
+            if not partes and nova:
+                inicio = None
             print(AJUDA)
             continue
         leitura = None
@@ -377,17 +513,19 @@ def partida(est, board, log):
             continue
         if leitura is not None and not calibrar(est, leitura):
             a = tempo.AtrasoHumano(**est["atraso"])
-            maximo = est["previsto_ms"] + est["k"] * a.media + tempo.TOLERANCIA_LEITURA_MS
+            maximo = est["previsto_ms"] + est["k"] * a.media + est.get("folga_ms", 0) + tempo.TOLERANCIA_LEITURA_MS
             print(f"Leitura {fmt_relogio(leitura)} impossível (no máximo ~{fmt_relogio(maximo)}). Confira o relógio. "
                   "Se estiver certa, use 'sair' e retome informando o relógio.")
             continue
         num = board.fullmove_number
         board.push(lance)
-        t0 = time.monotonic()
-        extra = ""
-        if leitura is not None:
+        t0 = enter  # a busca começa no ENTER do lance adversário
+        extra = f" inicio={hora(inicio)} enter={hora(enter)}"
+        if leitura is None:  # o relógio interno marcava o nosso relógio ao voltar a correr; desconta ouvir e digitar
+            est["previsto_ms"] = tempo.relogio_ao_pensar(est["previsto_ms"], inicio, t0)
+        else:  # calibrar já pôs a leitura física
             a = tempo.AtrasoHumano(**est["atraso"])
-            extra = f" leitura={fmt_relogio(leitura)} atraso={a.media / 1000:.1f}s/{a.seguro / 1000:.1f}s"
+            extra += f" leitura={fmt_relogio(leitura)} atraso={a.media / 1000:.1f}s/{a.seguro / 1000:.1f}s"
             print(f"(relógio calibrado; atraso humano ~{a.media / 1000:.1f}s, reserva {a.seguro / 1000:.1f}s)")
         registrar(log, f"lance={num} cor={'pretas' if nossa else 'brancas'} uci={lance.uci()} (adversário){extra}")
         salvar(est, board)

@@ -3,8 +3,8 @@ import random
 
 import chess
 
-from tempo import (EMERGENCIA_MS, MIN_MS, SEGURO_MIN_MS, AtrasoHumano, ControleBusca, fase, leitura_plausivel,
-                   orcamento, precisa_leitura)
+from tempo import (EMERGENCIA_MS, MIN_MS, OUVIR_MS, SEGURO_MIN_MS, AtrasoHumano, ControleBusca, fase, fechar_lance,
+                   leitura_plausivel, orcamento, precisa_leitura, relogio_ao_pensar)
 
 
 def test_atraso_humano():
@@ -26,6 +26,22 @@ def test_leituras():
     a = AtrasoHumano()
     assert leitura_plausivel(15_000, 1, a, 20_000)       # atraso real menor que o estimado: relógio acima
     assert not leitura_plausivel(15_000, 1, a, 120_000)  # "2:00" no lugar de "0:20"
+
+
+def test_relogio_automatico():
+    # adversário bate o relógio com o nosso em 10:00; 1ª tecla 1 s depois (OUVIR_MS), ENTER do lance em 3 s,
+    # nosso lance mostrado em 8 s (busca de 5 s), ENTER ao bater o relógio em 12 s
+    inicio, t0, fim = 100.0, 102.0, 111.0
+    relogio_t0 = relogio_ao_pensar(600_000, inicio, t0)
+    assert relogio_t0 == 600_000 - 2000 - OUVIR_MS
+    relogio, gasto, humano = fechar_lance(relogio_t0, inicio, t0, fim, 5000, 0)
+    assert gasto == 12_000 and humano == 7000 and relogio == 600_000 - gasto  # sem incremento: sai tudo
+    assert fechar_lance(relogio_t0, inicio, t0, fim, 5000, 10_000)[0] == 600_000 - gasto + 10_000
+    assert fechar_lance(relogio_t0, inicio, t0, fim, 20_000, 0)[2] == 0  # parte humana nunca negativa
+    assert fechar_lance(600_000, None, t0, fim, 5000, 0) == (591_000, None, None)  # sem 1ª tecla: fecha desde t0
+    a = AtrasoHumano()
+    assert not leitura_plausivel(500_000, 0, a, 530_000)
+    assert leitura_plausivel(500_000, 0, a, 530_000, folga_ms=30_000)  # ENTER esquecido: relógio contou a mais
 
 
 def test_fase():
@@ -109,12 +125,40 @@ def simular(base_s, inc_s, lances, atraso_min, atraso_max, semente):
     return menor
 
 
+def simular_medido(base_s, inc_s, lances, atraso_min, atraso_max, semente, ouvir_max=2 * OUVIR_MS):
+    """Mesma partida com o relógio automático de xadrex.py: o programa mede digitar (1ª tecla -> ENTER) e
+    t0 -> ENTER ao bater o relógio; só o tempo de ouvir é estimado (OUVIR_MS; o real varia de 0 a ouvir_max).
+    Nenhuma leitura do relógio. Devolve a menor sobra do relógio real (ms)."""
+    rnd = random.Random(semente)
+    a = AtrasoHumano()
+    real = medido = base_s * 1000.0  # nosso relógio quando ele volta a correr (adversário bateu o dele)
+    menor = real
+    for n in range(lances):
+        humano = rnd.uniform(atraso_min, atraso_max)
+        antes, depois = 0.4 * humano, 0.6 * humano  # ouvir + digitar | anunciar, mover, bater o relógio
+        ouvir = min(antes, rnd.uniform(0, ouvir_max))
+        previsto = relogio_ao_pensar(medido, 0, (antes - ouvir) / 1000)  # 1ª tecla em 0 s, ENTER em t0
+        f = max(0.0, 1 - n / 40)
+        alvo, maximo = orcamento(previsto, inc_s * 1000, a, f, n + 1)
+        pensado = min(maximo, alvo * rnd.uniform(0.5, 3.0))
+        sobra = real - antes - pensado - depois
+        menor = min(menor, sobra)
+        if sobra <= 0:
+            return sobra
+        t0 = (antes - ouvir) / 1000
+        medido, _, parte_humana = fechar_lance(previsto, 0, t0, t0 + (pensado + depois) / 1000, pensado, inc_s * 1000)
+        a.observar(parte_humana)
+        real = sobra + inc_s * 1000
+    return menor
+
+
 def test_simulacao_sem_perder_por_tempo():
     for semente in range(20):
         assert simular(15 * 60, 10, 120, 3000, 8000, semente) > 0      # 15+10, partida longa
         assert simular(15 * 60, 10, 120, 6000, 10000, semente) > 0     # 15+10, equipe lenta
         assert simular(25 * 60, 0, 80, 3000, 8000, semente) > 0        # 25+0
         assert simular(10 * 60, 0, 60, 3000, 8000, semente) > 0        # 10+0 (competição); 80 lances perde (diário)
+        assert simular_medido(10 * 60, 0, 60, 3000, 8000, semente) > 0  # 10+0 com relógio automático
         assert simular(5 * 60, 0, 40, 2000, 5000, semente) > 0         # Armageddon brancas
         assert simular(4 * 60, 0, 35, 2000, 5000, semente) > 0         # Armageddon pretas
 

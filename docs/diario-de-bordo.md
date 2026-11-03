@@ -29,8 +29,8 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | 0. Diagnóstico comparativo (chess-challenge × xadrex) | feita | — |
 | 0. Arena de partidas automáticas | feita; match de 10 partidas em 10+0 rodando em 03/11 | — |
 | 1. Padrão de tempo 10+0 + teste de simulação 10+0 | feita (60 lances nossos: 0/50 perdas; 80 lances: 19/50, limite conhecido) | 60ebb8d |
-| 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | neste commit |
-| 3. Relógio automático (medir a parte humana sem digitar a leitura) | pendente | |
+| 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
+| 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | neste commit |
 | 4. Anti-empate com risco limitado | adiada (depois do prazo, só com validação na arena) | |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
 | — Incremento oficial | confirmado: 10+0, relógio físico (organização, 03/11/2026) | |
@@ -59,8 +59,26 @@ Problema: abaixo de 2 min o programa exige digitar o relógio físico a cada lan
 ### D5 — 03/11/2026 — Anti-empate adiado
 Pontuação 3-1-0: desviar do empate compensa se 2·P(vitória) > P(derrota). Mas contra outro Stockfish um lance pior costuma virar derrota, e em finais de reis e peões o 0.00 em busca profunda é exato. Proposta com risco limitado em `docs/melhorias.md` (item 4). Só entra com validação na arena, contra adversário forte e fraco.
 
+### D6 — 03/11/2026 — Relógio automático: como foi implementado (D4)
+- Instantes: `inicio` = 1ª tecla da vez do adversário (`tab` e linha vazia não contam, porque podem vir antes do anúncio; uma tentativa com erro de digitação conta, porque o relógio já corria); `t0` = ENTER do lance adversário (começo da busca); `fim` = ENTER ao bater o relógio. Leitor tecla a tecla em `ler_linha`: `msvcrt` no Windows, `termios` em terminal Unix, `input()` fora de terminal (os dois instantes viram o fim da leitura).
+- Contabilidade (`tempo.fechar_lance` e `tempo.relogio_ao_pensar`): `gasto = (fim − inicio) + OUVIR_MS`. `est["previsto_ms"]` continua sendo o relógio em `t0` quando `pensar()` roda (assinatura e significado mantidos para a arena). No `fim` ele passa a guardar o relógio de quando o nosso voltar a correr (relógio em `t0` − (fim − t0) + incremento); no ENTER do lance adversário seguinte desconta ouvir e digitar. Somando os dois passos sai exatamente `gasto − incremento` por lance, sem usar o atraso médio estimado.
+- Parte humana medida = gasto − busca (busca = de `t0` até mostrar o lance) alimenta `AtrasoHumano.observar` em todo lance fechado por ENTER.
+- ENTER esquecido: a 1ª tecla do lance seguinte fecha o nosso tempo. Conta a mais o tempo que o adversário pensou (lado seguro); essa amostra não ensina o atraso (inflaria a reserva) e o excesso possível vira `folga_ms`, somada ao teto de leitura plausível, para uma leitura correta não ser recusada como "impossível". A folga zera a cada leitura aceita.
+- `k` (lances com atraso estimado desde a última leitura) não cresce mais no programa, porque o relógio interno não usa mais estimativa por lance. Fica no estado por compatibilidade com `calibrar` e com a arena.
+- Leitura obrigatória (`leitura_obrigatoria`): depois de `u`, sempre (o lance desfeito já saiu do relógio interno e o incremento pode não existir). Fora isso, só se o último lance nosso não foi medido (`medido = False`: retomada, 1º lance das brancas, qualquer lance sem 1ª tecla registrada); aí vale a regra antiga de `precisa_leitura`, que com `k = 0` significa relógio abaixo de 2 min. Com medição, a leitura é opcional mesmo abaixo de 2 min, que era o objetivo de D4.
+- Log: linha `relogio` por lance nosso com início, fim (e se veio de ENTER ou tecla), gasto, busca, parte humana e relógio interno; a linha do lance adversário traz início e ENTER.
+- Simulação (`simular_medido`, 50 sementes, 10+0, equipe 3–8 s, ouvir real entre 0 e 2 s): 60 lances nossos 0/50 perdas (menor sobra 96,7 s; antes 94,2 s), 70 lances 0/50 (36,3 s; antes 31,5 s), 80 lances 10/50 (antes 19/50). O ganho de sobra é pequeno; o ganho real é tirar a leitura obrigatória abaixo de 2 min.
+
+### D7 — 03/11/2026 — Riscos conhecidos do relógio automático
+- **`OUVIR_MS` = 1 s é suposição, não medida.** É a única parte do nosso tempo que o programa não vê, e o erro dela acumula a cada lance (não há leitura para zerar). Se o tempo real de ouvir for maior, o relógio interno fica acima do real. Na simulação com ouvir real sorteado até 4 s (limitado ao tempo antes do ENTER, média ~0,55 s acima da suposição), 60 lances: 0/50 perdas (menor sobra 64 s); 70 lances: 1/50. Mitigação: uma leitura `e7e5 m:ss` de vez em quando corrige tudo; vale cronometrar no ensaio quanto leva do adversário bater o relógio até a nossa 1ª tecla e ajustar a constante.
+- **O leitor `msvcrt` não foi testado em Windows** (desenvolvimento em macOS). O caminho `termios` foi conferido num pseudo-terminal (eco, backspace, seta, acento, Ctrl+C, terminal restaurado) e a lógica comum (`ler_teclas`) tem teste com teclas injetadas. Testar no notebook da competição: digitar, apagar, setas, Ctrl+C e ENTER vazio.
+- Digitar durante a vez do adversário antes do anúncio (ex.: corrigir algo) antecipa o início: o relógio interno conta a mais (seguro, mas pensa menos).
+- Na retomada, o relógio informado vale para o momento da pergunta; se o nosso relógio físico estava correndo, o tempo entre responder e começar a digitar não é descontado (alguns segundos). Por isso a retomada volta à regra antiga de leitura obrigatória abaixo de 2 min.
+
 ## Arena
 
 Fica em `/Users/bea/workspace/xadrez/arena/` (fora do repositório; será trazida para cá quando o match de 03/11 terminar). Roda o xadrex (código real, via `xadrex.pensar`) contra o notebook da Bea reimplementado, com relógio, atraso humano simulado (3–8 s), aberturas balanceadas com cores trocadas, PGN e Elo com intervalo de confiança.
 
 Resultado do match de 03/11: pendente.
+
+Compatibilidade depois da fase 3: a arena continua funcionando sem mudanças (`pensar`, `abrir_motor`, `calibrar`, `precisa_leitura` e o significado de `est["previsto_ms"]` em `pensar` foram mantidos; campos novos do estado são lidos com `.get`). Mas ela replica a **contagem antiga** (`previsto -= gasto + atraso médio`, `k += 1`, leitura simulada pela regra de `precisa_leitura`), então não mede o relógio automático. Para medir, `modelos.Xadrex.lance(board, relogio_ms)` precisaria: usar `relogio_ms` (o relógio real da arena, que é o que o relógio automático enxerga, salvo o erro de `OUVIR_MS`) como `est["previsto_ms"]` e marcar `est["medido"] = True`; ensinar ao atraso a parte humana do lance anterior (`relogio_ms_anterior − busca_anterior + incremento − relogio_ms`); trocar a leitura por `xadrex.leitura_obrigatoria(est)` (fica falsa); e não incrementar `k`.

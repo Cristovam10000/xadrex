@@ -4,9 +4,10 @@ Decide quanto tempo o Stockfish pode pensar em cada lance, considerando que o no
 físico também corre enquanto pessoas digitam, anunciam, movem a peça e apertam o relógio.
 
 Três partes:
-1. AtrasoHumano: aprende quanto a operação humana custa por lance, a partir das leituras do
-   relógio físico que o operador digita (ex.: "e7e5 12:31"). Usa o mesmo estimador do tempo de
-   retransmissão do TCP (RFC 6298): média suavizada + 4 x desvio suavizado.
+1. AtrasoHumano: aprende quanto a operação humana custa por lance, a partir do relógio automático
+   (fechar_lance: 1ª tecla do lance adversário até o ENTER ao bater o nosso relógio, menos a busca) ou
+   das leituras do relógio físico que o operador digita (ex.: "e7e5 12:31"). Usa o mesmo estimador do
+   tempo de retransmissão do TCP (RFC 6298): média suavizada + 4 x desvio suavizado.
 2. orcamento(): transforma relógio, incremento, atraso humano e fase da partida em um tempo-alvo
    e um tempo máximo para a busca, sempre guardando reserva para a parte humana do lance.
 3. ControleBusca: durante a busca, a cada iteração completa, estende ou encurta o alvo conforme
@@ -25,6 +26,9 @@ MATE = 90_000          # avaliações acima disto (em centipeões) representam m
 LEITURA_A_CADA = 8     # sem leitura, o erro da previsão acumula a cada lance
 LEITURA_ABAIXO_MS = 120_000  # relógio baixo: erro acumulado vira perda por tempo
 TOLERANCIA_LEITURA_MS = 5000
+# SUPOSIÇÃO (não medida): do adversário bater o relógio até a 1ª tecla do lance dele (ouvir o anúncio). É a
+# única parte do nosso tempo que o relógio automático não mede; errar para baixo acumula a cada lance (risco).
+OUVIR_MS = 1000
 
 PESO_FASE = {chess.KNIGHT: 1, chess.BISHOP: 1, chess.ROOK: 2, chess.QUEEN: 4}  # 24 na posição inicial
 
@@ -54,9 +58,28 @@ def precisa_leitura(previsto_ms, k):
     return k >= LEITURA_A_CADA or previsto_ms < LEITURA_ABAIXO_MS
 
 
-def leitura_plausivel(previsto_ms, k, atraso, leitura_ms):
-    """O relógio real não pode passar da previsão somada ao atraso humano descontado nos k lances (atraso >= 0)."""
-    return leitura_ms <= previsto_ms + k * atraso.media + TOLERANCIA_LEITURA_MS
+def leitura_plausivel(previsto_ms, k, atraso, leitura_ms, folga_ms=0):
+    """O relógio real não pode passar da previsão somada ao atraso humano descontado nos k lances (atraso >= 0)
+    e à folga do relógio automático (o que ele pode ter contado a mais quando o ENTER foi esquecido)."""
+    return leitura_ms <= previsto_ms + k * atraso.media + folga_ms + TOLERANCIA_LEITURA_MS
+
+
+def relogio_ao_pensar(relogio_ms, inicio_s, t0_s):
+    """Relógio automático: nosso relógio no ENTER do lance adversário (t0, início da busca), a partir do que ele
+    marcava ao voltar a correr. inicio_s = 1ª tecla do lance adversário (instantes em segundos, time.monotonic)."""
+    return relogio_ms - ((t0_s - inicio_s) * 1000 + OUVIR_MS)
+
+
+def fechar_lance(relogio_t0_ms, inicio_s, t0_s, fim_s, busca_ms, inc_ms):
+    """Relógio automático, no ENTER ao bater o nosso relógio (fim_s). relogio_t0_ms = relógio em t0.
+    Devolve (relógio quando voltar a correr, gasto do lance, parte humana), em ms.
+    gasto = (fim - inicio) + OUVIR_MS; parte humana = gasto - busca. Sem inicio_s (1º lance das brancas,
+    retomada) o relógio ainda fecha a partir de t0, mas gasto e parte humana ficam None."""
+    relogio = relogio_t0_ms - (fim_s - t0_s) * 1000 + inc_ms
+    if inicio_s is None:
+        return relogio, None, None
+    gasto = (fim_s - inicio_s) * 1000 + OUVIR_MS
+    return relogio, gasto, max(0.0, gasto - busca_ms)
 
 
 def fase(board):

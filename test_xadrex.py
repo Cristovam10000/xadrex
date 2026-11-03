@@ -150,6 +150,103 @@ def test_sem_motor_nao_inicia():
             xadrex.COMANDO_MOTOR, xadrex.ESTADO, builtins.input = originais
 
 
+def teclas(texto):
+    it = iter(texto)
+    return lambda: next(it)
+
+
+def test_ler_teclas():
+    eco = []
+    assert xadrex.ler_teclas(teclas("e7e5\r"), eco.append)[0] == "e7e5" and "".join(eco) == "e7e5\n"
+    assert xadrex.ler_teclas(teclas("e7\x08\x08\x08g1f3\r"), eco.append)[0] == "g1f3"  # backspace a mais não quebra
+    assert xadrex.ler_teclas(teclas("\xe0Ke2\x00;e4\r"), eco.append)[0] == "e2e4"  # seta/F1 no Windows
+    assert xadrex.ler_teclas(teclas("\x1b[Ae2\x1b[1;5Ce4\n"), eco.append)[0] == "e2e4"  # setas no terminal Unix
+    assert xadrex.ler_teclas(teclas("\x01\te2e4 1:31\r"), eco.append)[0] == "e2e4 1:31"  # controle ignorado
+    texto, primeira, enter = xadrex.ler_teclas(teclas("\r"), eco.append)
+    assert texto == "" and primeira == enter
+
+    def devagar():  # 1ª tecla e depois 50 ms até o ENTER
+        yield "e"
+        time.sleep(0.05)
+        yield "\r"
+    g = devagar()
+    texto, primeira, enter = xadrex.ler_teclas(lambda: next(g), eco.append)
+    assert texto == "e" and enter - primeira >= 0.05
+    try:
+        xadrex.ler_teclas(teclas("e2\x03"), eco.append)
+        raise AssertionError("Ctrl+C")
+    except KeyboardInterrupt:
+        pass
+
+
+def test_partida_relogio_automatico():
+    """Somos pretas em 10+0, com relógio e leitor de teclas falsos. Cobre ENTER ao bater o relógio, Ctrl+C no
+    prompt, ENTER esquecido (lance digitado direto), leitura opcional aceita graças à folga e 'u'."""
+    import contextlib
+    import io
+    import types
+    agora = [100.0]
+    roteiro = [  # (texto, segundos até a 1ª tecla, segundos digitando)
+        ("e2e4", 10, 2),          # 1ª tecla 110, ENTER 112
+        (KeyboardInterrupt, 1, 0),  # Ctrl+C no prompt do ENTER: o nosso tempo continua aberto
+        ("", 3, 0),               # ENTER ao bater o relógio em 119
+        ("g1f3", 20, 1.5),        # adversário pensou 20 s (nosso relógio parado); 1ª tecla 139, ENTER 140,5
+        ("f1c4", 30, 1),          # ENTER esquecido: 1ª tecla em 172,5 fecha o nosso tempo e já é o lance
+        ("", 1, 0),               # ENTER em 176,5
+        ("d2d3 9:30", 5, 2),      # leitura acima do relógio interno, mas dentro da folga do ENTER esquecido
+        ("u", 1, 0),
+        ("sair", 1, 0),
+    ]
+    nossos = iter(["e7e5", "b8c6", "g8f6", "f8c5"])
+    vistos = []
+
+    def ler_linha(_prompt):
+        vistos.append(json.loads(json.dumps(est)))
+        texto, espera, digitar = roteiro.pop(0)
+        agora[0] += espera
+        primeira = agora[0]
+        if texto is KeyboardInterrupt:
+            raise KeyboardInterrupt
+        agora[0] += digitar
+        return texto, primeira, agora[0]
+
+    def pensar(board, est, nossa, t0):
+        agora[0] += 3 if board.fullmove_number == 1 else 2  # busca
+        return chess.Move.from_uci(next(nossos)), {}, xadrex.tempo.ControleBusca(1000, 1000), "teste"
+
+    originais = xadrex.ler_linha, xadrex.pensar, xadrex.time, xadrex.ESTADO
+    with tempfile.TemporaryDirectory() as d:
+        xadrex.ler_linha, xadrex.pensar = ler_linha, pensar
+        xadrex.time = types.SimpleNamespace(monotonic=lambda: agora[0], sleep=time.sleep)
+        xadrex.ESTADO = Path(d) / "partida_atual.json"
+        est = {"cor": "b", "base_s": 600, "inc_s": 0, "previsto_ms": 600_000, "k": 0, "exigir_leitura": False,
+               "medido": False, "folga_ms": 0, "atraso": {"media": 5000, "desvio": 2500, "amostras": 0},
+               "aval_anterior": None, "log": "x", "lances": []}
+        log = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                xadrex.partida(est, chess.Board(), log)
+        finally:
+            xadrex.ler_linha, xadrex.pensar, xadrex.time, xadrex.ESTADO = originais
+    prev = [v["previsto_ms"] for v in vistos]
+    assert prev[1] == prev[2] == 600_000 - 2000 - 1000  # relógio em t0: desconta ouvir (1 s) e digitar (2 s)
+    # 1º lance: 1ª tecla 110 -> ENTER ao bater 119: gasto 9 s + ouvir 1 s; busca 3 s; parte humana 7 s
+    assert prev[3] == 590_000 and vistos[3]["medido"] and vistos[3]["atraso"]["media"] == 7000
+    assert prev[4] == 590_000 - 1500 - 1000
+    # ENTER esquecido: fecha na 1ª tecla (172,5), conta a mais o tempo do adversário; não ensina o atraso
+    assert prev[5] == 587_500 - (172.5 - 140.5) * 1000 - 1000 - 1000  # e já desconta ouvir/digitar do lance novo
+    assert vistos[5]["atraso"]["media"] == 7000 and vistos[5]["folga_ms"] == (172.5 - 142.5) * 1000
+    assert prev[6] == prev[5] - 3000 and vistos[6]["atraso"]["media"] == 6500  # parte humana 3 s
+    assert not xadrex.leitura_obrigatoria({**vistos[6], "previsto_ms": 60_000})  # medido: abaixo de 2 min, opcional
+    assert xadrex.leitura_obrigatoria({**vistos[6], "previsto_ms": 60_000, "medido": False})  # sem medição: regra antiga
+    assert prev[7] == 570_000 and vistos[7]["folga_ms"] == 0  # leitura 9:30 aceita (dentro da folga)
+    assert vistos[8]["exigir_leitura"] and not vistos[8]["medido"]  # depois de 'u'
+    texto = log.getvalue()
+    assert texto.count("relogio lance=") == 4 and "fim_por=tecla" in texto and "humano=7.00s" in texto
+    assert est["lances"] == ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "g8f6"]  # 'u' tirou d2d3 e f8c5
+    assert not roteiro
+
+
 if __name__ == "__main__":
     for nome, f in list(globals().items()):
         if nome.startswith("test_"):
