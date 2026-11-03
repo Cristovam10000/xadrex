@@ -182,8 +182,8 @@ def iniciar():
     cor = ""
     while cor not in ("b", "p"):
         cor = perguntar("Nossa cor: b = brancas, p = pretas", "b").lower()
-    base = perguntar_num("Tempo base em minutos", "15", 1)
-    inc = perguntar_num("Incremento em segundos", "10", 0)
+    base = perguntar_num("Tempo base em minutos", "10", 1)  # Errata nº 01: 10 min por equipe, sem incremento
+    inc = perguntar_num("Incremento em segundos", "0", 0)
     LOGS.mkdir(exist_ok=True)
     est = {
         "cor": "w" if cor == "b" else "b",

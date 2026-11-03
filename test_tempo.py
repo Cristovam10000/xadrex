@@ -114,6 +114,7 @@ def test_simulacao_sem_perder_por_tempo():
         assert simular(15 * 60, 10, 120, 3000, 8000, semente) > 0      # 15+10, partida longa
         assert simular(15 * 60, 10, 120, 6000, 10000, semente) > 0     # 15+10, equipe lenta
         assert simular(25 * 60, 0, 80, 3000, 8000, semente) > 0        # 25+0
+        assert simular(10 * 60, 0, 60, 3000, 8000, semente) > 0        # 10+0 (competição); 80 lances perde (diário)
         assert simular(5 * 60, 0, 40, 2000, 5000, semente) > 0         # Armageddon brancas
         assert simular(4 * 60, 0, 35, 2000, 5000, semente) > 0         # Armageddon pretas
 

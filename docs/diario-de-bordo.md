@@ -28,20 +28,22 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | --- | --- | --- |
 | 0. Diagnóstico comparativo (chess-challenge × xadrex) | feita | — |
 | 0. Arena de partidas automáticas | feita; match de 10 partidas em 10+0 rodando em 03/11 | — |
-| 1. Padrão de tempo 10+0 + teste de simulação 10+0 | pendente | |
+| 1. Padrão de tempo 10+0 + teste de simulação 10+0 | feita (60 lances nossos: 0/50 perdas; 80 lances: 19/50, limite conhecido) | neste commit |
 | 2. Abortar antes da partida se o motor não abrir | pendente | |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | pendente | |
 | 4. Anti-empate com risco limitado | adiada (depois do prazo, só com validação na arena) | |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
-| — Incremento oficial | e-mail enviado/a enviar para coordenacao.engsoftware@somosicev.com | |
+| — Incremento oficial | confirmado: 10+0, relógio físico (organização, 03/11/2026) | |
 
 ## Decisões
 
 ### D1 — 03/11/2026 — Competir com o xadrex, não com o chess-challenge
 O chess-challenge (código da Bea de 2023) é o Stockfish 16 com 2 s fixos por lance e 1 thread, chamado por um notebook. A rede neural do projeto nunca escolhe lances e não funcionaria (saída sigmoid de 1 neurônio contra rótulos UCI em texto; peças pretas somem da entrada; dataset é ponteiro do Git LFS). O notebook trava com Enter vazio, o que pelo edital é derrota. O xadrex tem gestão de tempo própria, testes, entrada que nunca levanta exceção, retomada e desfazer.
 
-### D2 — 03/11/2026 — Padrão de tempo 10+0 até a organização responder
-A errata fixa 10 min por equipe e não fala em incremento. O padrão anterior (15+10) veio de uma FAQ sem data. Simulação com o `tempo.py`: operador lento (6–10 s por lance), 60 lances, perde 50/50 partidas no padrão 15+10 e 0/50 configurado como 10+0. O operador ainda pode digitar outro valor no início.
+### D2 — 03/11/2026 — Padrão de tempo 10+0 (confirmado)
+Confirmado com a organização em 03/11/2026: 10 min por equipe, sem incremento, relógio físico. Como o relógio é físico, a parte humana do lance sempre sai do nosso tempo. O suporte a incremento continua no código.
+Histórico: a errata fixa 10 min por equipe e não fala em incremento. O padrão anterior (15+10) veio de uma FAQ sem data. Simulação com o `tempo.py`: operador lento (6–10 s por lance), 60 lances, perde 50/50 partidas no padrão 15+10 e 0/50 configurado como 10+0. O operador ainda pode digitar outro valor no início.
+Teste (`test_simulacao_sem_perder_por_tempo`, equipe com 3–8 s, mesma contagem do programa): 10+0 com 60 lances nossos não perde em 50 sementes (menor sobra ~94 s); com 70 lances também 0/50 (~32 s). **Limite conhecido:** com 80 lances nossos, 19/50 perdem por tempo. O teste usa 60 lances; não foi afrouxado.
 
 ### D3 — 03/11/2026 — Motor ausente deve parar o programa antes da partida
 Hoje, sem o `.exe`, o programa só avisa e depois joga o "primeiro lance legal" (`pensar`, último recurso). O operador não percebe. Parar antes da partida não cria risco durante o jogo.

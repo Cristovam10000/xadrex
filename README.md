@@ -40,7 +40,8 @@ O `.exe` (103 MB) não fica no repositório porque excede o limite de arquivo do
 .venv\Scripts\python.exe xadrex.py
 ```
 
-Informe nossa cor, tempo base e incremento (padrão 15 min + 10 s). No turno do adversário, digite o lance
+Informe nossa cor, tempo base e incremento. O padrão é 10 min + 0 s (Errata nº 01): sem incremento, relógio
+físico (confirmado com a organização). No turno do adversário, digite o lance
 anunciado em UCI (`e2e4`, `e7e8q`). Nosso lance aparece como `>>> NOSSO LANCE: ...`.
 
 | Comando | Efeito |
@@ -83,6 +84,7 @@ atraso humano fixo de 5 s, ele gastou 13 s com 24 s no relógio.
 
 Evidência: `test_tempo.py` simula partidas com a mesma contagem do programa (o gestor só conhece o relógio
 previsto; leitura só quando exigida, com erro de até 1 s) e atraso humano aleatório: sem perdas por tempo
-em 15+10 com 120 lances (equipe com 3–8 s e equipe lenta com 6–10 s por lance), 25+0 com 80 lances e
-Armageddon (5 e 4 min). O horizonte sem incremento foi escolhido nessa simulação: com a primeira versão,
+em 10+0 com 60 lances nossos (equipe com 3–8 s por lance), 15+10 com 120 lances (equipe com 3–8 s e equipe
+lenta com 6–10 s), 25+0 com 80 lances e Armageddon (5 e 4 min). Limite conhecido: em 10+0 com 80 lances nossos
+a simulação perde por tempo em 19 de 50 partidas. O horizonte sem incremento foi escolhido nessa simulação: com a primeira versão,
 todas as 30 partidas 25+0 de 80 lances perdiam por tempo.
