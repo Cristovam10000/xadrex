@@ -28,6 +28,22 @@ def stockfish_padrao():
             or (str(EXE_XADREX) if EXE_XADREX.is_file() else None))
 
 
+def evento_antiempate(info):
+    """Evento do anti-empate para o PGN/jsonl (sem espaços), ou None se ele não rodou ou não houve gatilho.
+    Ex.: antiempate=desviou:repeticao:alt=f8f1(+0.00) / antiempate=manteve:sem-progresso:freio=reis-e-peoes"""
+    reg = info.get("antiempate") if isinstance(info, dict) else None
+    if not isinstance(reg, dict):
+        return None
+    def campo(k):
+        v = reg.get(k)
+        return "-" if v is None or str(v).strip() == "" else "_".join(str(v).split())
+    if campo("gatilho") == "-":
+        return None
+    partes = [campo("decisao"), campo("gatilho")]
+    partes += [f"{k}={campo(k)}" for k in ("freio", "alt") if campo(k) != "-"]
+    return "antiempate=" + ":".join(partes)
+
+
 STOCKFISH = stockfish_padrao()  # a arena troca por --stockfish antes de criar os adaptadores
 
 
@@ -192,6 +208,12 @@ class Xadrex:
             est["aval_anterior"] = controle.aval
         if any(m in motivo for m in ("falha", "travou", "fallback")):
             self.eventos.append(f"recuperou={motivo}")
+        try:  # nunca pode derrubar a partida: o registro é só diagnóstico
+            ev = evento_antiempate(info)
+            if ev:
+                self.eventos.append(ev)
+        except Exception:
+            pass
         self.aberto = {"relogio": relogio_ms, "busca": busca_ms}
         return lance
 

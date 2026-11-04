@@ -62,7 +62,7 @@ Como ler cada campo:
 
 Critério do anti-empate: ligue `XADREX_ANTIEMPATE` no torneio se o `xadrex+ae` não tiver nenhuma derrota a mais que o `xadrex` contra o `bea` e fizer mais pontos 3-1-0 que ele contra o `fraco`. Qualquer derrota para o `fraco`, ou perda por tempo, lance ilegal ou falha que o `xadrex` não teve, é motivo para manter desligado. Uma diferença de 1 ou 2 resultados é ruído.
 
-Antes de culpar o anti-empate por uma derrota, confira se ele desviou naquela partida. Hoje a arena não registra isso: o PGN e o `partidas.jsonl` não trazem a decisão do anti-empate. A marca `antiempate-desviou` só existe no log do programa real, em `logs/`, no campo `parada=` do lance, junto com `antiempate=...decisao:desviou`. Na arena dá para ver apenas indícios no PGN, como a partida sair de uma repetição. Registrar a decisão no PGN da arena fica como pendência.
+Antes de culpar o anti-empate por uma derrota, confira se ele desviou naquela partida. Quando o anti-empate encontra um gatilho, a arena grava um evento como `antiempate=desviou:repeticao:alt=f8f1(+0.00)` ou `antiempate=manteve:sem-progresso:freio=reis-e-peoes` no comentário do lance no PGN e em `eventos` no `partidas.jsonl`. O registro vale a partir da combinação `xadrex+ae` x `fraco` do `lote_ae`; a combinação `xadrex+ae` x `bea` desse lote rodou sem ele, e ali a decisão só aparece no log do programa real, em `logs/`.
 
 ## Checklist antes da partida
 
