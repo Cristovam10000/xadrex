@@ -32,7 +32,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | f091a20 |
 | — Testar o leitor de teclas no Windows (ou usar a chave `XADREX_ENTRADA_SIMPLES`, D9) | pendente | |
-| 4. Anti-empate com risco limitado | implementada (desligada por padrão, chave `XADREX_ANTIEMPATE`, D10); validação na arena pendente | cf518f7 |
+| 4. Anti-empate com risco limitado | implementada (desligada por padrão, chave `XADREX_ANTIEMPATE`, D10); validada em lote pequeno (D11); ligar é decisão da equipe | cf518f7 |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
 | — Incremento oficial | confirmado: 10+0, relógio físico (organização, 03/11/2026) | |
 
@@ -92,6 +92,19 @@ Muda D5 só no momento: o código entregue em 04/11 é o que joga no dia 06, ent
 - 2ª busca: `buscar` com `root_moves` (o mesmo vigia que mata motor travado), orçamento = 0,5 × alvo com teto em máximo − já gasto. Candidatos: lances que não repetem; em sem-progresso, só capturas e lances de peão. Troca se a alternativa (iteração completa) tiver aval ≥ −50 cp. Erro na 2ª busca: mata o motor (o próximo `pensar` reabre) e mantém o lance original.
 - **Limiares (30, −50, 20, 60 s, 0,5) são suposições**, sem medida. Riscos: a 2ª busca é mais rasa que a principal e pode aceitar um lance que perde em profundidade; contra outro Stockfish um lance pior costuma virar derrota (D5). Por isso o padrão é desligado.
 - Smoke real (Stockfish 19, macOS): xeque perpétuo com os dois ciclos já jogados; a busca escolheu repetir com 0.00 e o anti-empate trocou por `Df1` (0.00 na 2ª busca, 1,1 s). Linha do log: `antiempate=gatilho:repeticao,freio:-,candidatos:22,alt:f8f1(+0.00),decisao:desviou,busca2:1.12s`.
+
+### D11 — 03/11/2026 — Leitura do lote do anti-empate (`lote_ae`)
+Lote em `arena/resultados/lote_ae/`: 6 partidas por combinação, 10+0, atraso 3–8 s, seed 2026, fraco com Skill 5 e 1 s. Versão: commit 8701eff nas duas combinações contra o `bea` e em `xadrex` x `fraco`; `xadrex+ae` x `fraco` já rodou com 5c57bc4 (registro de eventos do anti-empate no PGN).
+- `xadrex` x `bea`: +2 =4 −0, 3-1-0 10 × 4. Motivos: tempo esgotado do bea 2, tripla repetição 4.
+- `xadrex+ae` x `bea`: +4 =2 −0, 3-1-0 14 × 2. Motivos: mate 1, tempo esgotado do bea 3, material insuficiente 2. Nenhuma tripla repetição; partidas de 128 a 171 meios-lances.
+- `xadrex` x `fraco` e `xadrex+ae` x `fraco`: +6 =0 −0 cada, todas por mate. Nenhum evento `antiempate=` no PGN de `xadrex+ae` x `fraco`: o anti-empate nunca foi acionado, porque o fraco perde antes de chegar a qualquer posição empatada.
+
+Leitura: o critério combinado foi atendido (nenhuma derrota a mais contra o forte e +4 pontos 3-1-0 contra ele). Ressalvas:
+- Só 1 das 4 vitórias contra o `bea` veio do tabuleiro (mate). As outras 3 foram bandeira do bea: evitar a repetição alonga a partida e o bea gasta 2 s fixos por lance. Contra um adversário com boa gestão de tempo esse ganho diminui.
+- O `fraco` padrão (Skill 5, 1 s) é fraco demais para exercitar o recurso, então a parte do critério "mais pontos contra o fraco" não mediu nada.
+- Amostra pequena, sem significância estatística.
+
+Recomendação: indício favorável para ligar `XADREX_ANTIEMPATE=1` no torneio, mas a decisão é da equipe.
 
 ## Arena
 

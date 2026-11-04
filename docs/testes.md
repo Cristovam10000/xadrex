@@ -82,4 +82,4 @@ Antes de culpar o anti-empate por uma derrota, confira se ele desviou naquela pa
 | run | data | resultado | versão | onde |
 |---|---|---|---|---|
 | match_10min (xadrex x bea, 10 partidas, 10+0, atraso 3 a 8 s, seed 2026) | 03/11 | xadrex +4 =6 -0, Elo +147 [+34, +304]; 3-1-0: 18 x 6 | 5b2428f | `arena/resultados/match_10min/` |
-| lote_ae (6 partidas por combinação, seed 2026) | 03/11 | em andamento | `competicao-ajustes` | `arena/resultados/lote_ae/` |
+| lote_ae (6 partidas por combinação, 10+0, atraso 3 a 8 s, seed 2026, fraco Skill 5 e 1 s) | 03/11 | contra bea: xadrex +2 =4 -0 (10 x 4), xadrex+ae +4 =2 -0 (14 x 2; 1 mate, 3 bandeiras do bea, 2 material insuficiente). Contra fraco: +6 =0 -0 as duas, todas por mate, anti-empate nunca acionado. Leitura em D11 do diário | 8701eff; xadrex+ae x fraco com 5c57bc4 | `arena/resultados/lote_ae/` |
