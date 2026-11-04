@@ -62,6 +62,8 @@ Como ler cada campo:
 
 Critério do anti-empate: ligue `XADREX_ANTIEMPATE` no torneio se o `xadrex+ae` não tiver nenhuma derrota a mais que o `xadrex` contra o `bea` e fizer mais pontos 3-1-0 que ele contra o `fraco`. Qualquer derrota para o `fraco`, ou perda por tempo, lance ilegal ou falha que o `xadrex` não teve, é motivo para manter desligado. Uma diferença de 1 ou 2 resultados é ruído.
 
+Limite desse critério: o `fraco` padrão (Skill 5, 1 s) não chega a posições empatadas. No `lote_ae` ele perdeu as 12 partidas por mate e o anti-empate não foi acionado nenhuma vez (D11 do diário), então "mais pontos contra o fraco" não mede o recurso. Para as próximas validações, a sugestão é um adversário intermediário, por exemplo `python3 rodar_testes.py lote --nome lote_x --fraco-skill 15 --fraco-tempo 2`. **Sugestão não testada:** não se sabe ainda se esse nível empata o bastante para acionar o anti-empate nem quanto o lote demora. Depois de rodar, confira no PGN se aparecem eventos `antiempate=` antes de tirar conclusões.
+
 Antes de culpar o anti-empate por uma derrota, confira se ele desviou naquela partida. Quando o anti-empate encontra um gatilho, a arena grava um evento como `antiempate=desviou:repeticao:alt=f8f1(+0.00)` ou `antiempate=manteve:sem-progresso:freio=reis-e-peoes` no comentário do lance no PGN e em `eventos` no `partidas.jsonl`. O registro vale a partir da combinação `xadrex+ae` x `fraco` do `lote_ae`; a combinação `xadrex+ae` x `bea` desse lote rodou sem ele, e ali a decisão só aparece no log do programa real, em `logs/`.
 
 ## Checklist antes da partida
