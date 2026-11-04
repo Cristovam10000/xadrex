@@ -106,6 +106,14 @@ Leitura: o critério combinado foi atendido (nenhuma derrota a mais contra o for
 
 Recomendação: indício favorável para ligar `XADREX_ANTIEMPATE=1` no torneio, mas a decisão é da equipe.
 
+### D12 — 04/11/2026 — Prioridade do Stockfish no Windows
+Medido no notebook da competição (Core 7 240H, 16 núcleos lógicos, modo de energia "Desempenho Máximo", na tomada): com prioridade normal o Stockfish pedia 14 threads e usava ~4 núcleos, 1,9 M nós/s, contra ~6–7 M nós/s no log de 03/11. Nenhum outro processo disputava a CPU: é o Windows reduzindo o processo que não está em foco.
+- 10 s na mesma posição: normal 1,9 M nós/s (prof 26); alta 6,2 (prof 31); acima do normal 6,4.
+- Efeito colateral medido como atraso de um `sleep(10 ms)` no Python durante a busca: alta com 14 threads travou o Python até 2,1 s (vigia, relógio automático e teclado rodam nele); acima do normal com 14, até ~190 ms; **acima do normal com 12 threads, 6,0–6,2 M nós/s e até ~110 ms**.
+- Decisão: `ABOVE_NORMAL_PRIORITY_CLASS` em `abrir_motor` e `Threads = núcleos − 4`. Fora do Windows nada muda.
+- Hash 512 MB mantido: em buscas de 5 a 15 s a tabela encheu de 4% a 19%, e a máquina tinha só 1,6–3,2 GB livres com navegador e editores abertos.
+- Validação: `rodar_testes.py unit` 3/3; smoke 4/4 vitórias, sem falhas. O teclado depende de teste humano (item 2 do checklist), mas o motor só pensa na nossa vez, quando ninguém digita.
+
 ## Arena
 
 Fica em `arena/` (como rodar e limites em `arena/README.md`). Roda o xadrex (código real, via `xadrex.pensar`) contra o notebook da Bea reimplementado, com relógio, atraso humano simulado (3–8 s), aberturas balanceadas com cores trocadas, PGN e Elo com intervalo de confiança.

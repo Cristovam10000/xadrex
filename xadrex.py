@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+import subprocess
 import sys
 import time
 from dataclasses import asdict
@@ -20,7 +21,11 @@ RAIZ = Path(__file__).resolve().parent
 COMANDO_MOTOR = [str(RAIZ / "engines" / "stockfish-windows-x86-64-universal.exe")]
 ESTADO = RAIZ / "partida_atual.json"
 LOGS = RAIZ / "logs"
-OPCOES_MOTOR = {"Threads": max(1, (os.cpu_count() or 2) - 2), "Hash": 512}
+OPCOES_MOTOR = {"Threads": max(1, (os.cpu_count() or 4) - 4), "Hash": 512}
+# Windows (medido em 04/11 no notebook do evento, 16 núcleos lógicos): com prioridade normal o Stockfish usou ~4
+# núcleos (1,9 M nós/s). Acima do normal com 12 threads: 6,0 M nós/s e o Python sem travar mais de ~110 ms.
+# Prioridade alta com 14 threads chegou a travar o Python por 2 s (teclado, vigia e relógio automático rodam nele).
+PRIORIDADE_MOTOR = {"creationflags": subprocess.ABOVE_NORMAL_PRIORITY_CLASS} if os.name == "nt" else {}
 # chave de emergência (leitor de teclas com problema no dia): input() simples, sem o instante da 1ª tecla
 ENTRADA_SIMPLES = os.environ.get("XADREX_ENTRADA_SIMPLES") == "1"
 # anti-empate (empate.py): desligado até a arena mostrar ganho; lido a cada lance (a arena liga pelo atributo)
@@ -37,7 +42,7 @@ def abrir_motor():
     global motor
     matar_motor()
     # setpgrp: o Ctrl+C do console não chega ao Stockfish (senão ele morre junto)
-    motor = chess.engine.SimpleEngine.popen_uci(COMANDO_MOTOR, setpgrp=True, timeout=5)
+    motor = chess.engine.SimpleEngine.popen_uci(COMANDO_MOTOR, setpgrp=True, timeout=5, **PRIORIDADE_MOTOR)
     motor.configure(OPCOES_MOTOR)
     motor.timeout = 2.0  # prazo para comandos fora da busca, inclusive para a análise *começar* (padrão: 10 s)
 
