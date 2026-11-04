@@ -18,7 +18,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 ## Como retomar
 
 1. `git switch competicao-ajustes` e leia a seção "Estado atual".
-2. Testes: `python test_tempo.py`, `python test_empate.py` e `python test_xadrex.py` (no Windows, `.venv\Scripts\python.exe ...`).
+2. Testes: `python test_tempo.py`, `python test_empate.py` e `python test_xadrex.py` (no Windows, `.venv\Scripts\python.exe ...`), ou `python3 rodar_testes.py unit` para os três de uma vez. Smoke da arena, match, lote e checklist antes da partida: [docs/testes.md](testes.md).
 3. Pegue o primeiro item "pendente" da tabela de fases. Uma mudança por commit, com teste.
 4. Ao terminar uma fase, atualize a tabela e registre as decisões novas abaixo.
 

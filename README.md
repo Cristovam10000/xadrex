@@ -87,7 +87,8 @@ depois `.venv\Scripts\python.exe xadrex.py`. Com a chave ligada, o log de cada l
 ficam em `empate.py` e ainda são suposições.
 
 Testes: `.venv\Scripts\python.exe test_tempo.py`, `.venv\Scripts\python.exe test_empate.py` e
-`.venv\Scripts\python.exe test_xadrex.py`.
+`.venv\Scripts\python.exe test_xadrex.py`. Para rodar tudo de uma vez (testes de unidade, smoke da arena,
+match e lote), use `rodar_testes.py`; o guia completo está em [docs/testes.md](docs/testes.md).
 
 ## Gestor de tempo (autoria da equipe)
 
