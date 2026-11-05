@@ -57,9 +57,9 @@ def test_candidatos():
 
 
 def test_tempo_e_decisao():
-    assert empate.tempo_busca(2000, 8000, 1000) == 1000  # metade do alvo
-    assert empate.tempo_busca(2000, 1500, 1000) == 500   # teto: o que sobra do máximo
-    assert empate.tempo_busca(2000, 1000, 1500) == 0
+    assert empate.tempo_busca(6000, 20_000, 1000) == 3000  # metade do alvo
+    assert empate.tempo_busca(6000, 3500, 1000) == 2500    # teto: o que sobra do máximo
+    assert empate.tempo_busca(200, 200, 200) == empate.BUSCA_MIN_MS  # final do 10+0: piso, não 0
     assert empate.desviar(empate.PISO_CP) and empate.desviar(0)
     assert not empate.desviar(empate.PISO_CP - 1) and not empate.desviar(None)
 

@@ -76,13 +76,14 @@ busca e parte humana medida.
 `.venv\Scripts\python.exe xadrex.py`. Nesse modo o tempo de digitar não é medido, então a leitura do relógio
 (`e7e5 12:31`) volta a ser obrigatória a cada 8 lances nossos e abaixo de 2 min.
 
-**Anti-empate (opcional).** Desligado por padrão: só será ligado se a arena mostrar ganho. Quando a busca escolhe
+**Anti-empate.** Ligado por padrão desde 04/11/2026: na arena fez 80 x 58 pontos 3-1-0 contra o `bea` (30 partidas cada, sem derrotas; diário D13). Quando a busca escolhe
 um lance que repete uma posição (ou a partida está há 20 meios-lances sem captura nem lance de peão) e a avaliação
 está entre -0,30 e +0,30, o programa faz uma 2ª busca curta só entre os lances que não repetem e joga a melhor
-alternativa se ela não for pior que -0,50. Não tenta com menos de 1 min no relógio, sem material para dar mate,
-em final só de reis e peões nem com lance único; qualquer erro nessa etapa mantém o lance original. Para ligar, no
-PowerShell: `$env:XADREX_ANTIEMPATE=1; .venv\Scripts\python.exe xadrex.py`; no cmd: `set XADREX_ANTIEMPATE=1` e
-depois `.venv\Scripts\python.exe xadrex.py`. Com a chave ligada, o log de cada lance nosso ganha o campo
+alternativa se ela não for pior que -0,50 (a 2ª busca tem pelo menos 1 s). Não tenta com menos de 1 min no relógio,
+sem material para dar mate, em final só de reis e peões nem com lance único; qualquer erro nessa etapa mantém o lance
+original. O início da partida e o cabeçalho do log dizem se está ligado. Para desligar, no PowerShell:
+`$env:XADREX_ANTIEMPATE=0; .venv\Scripts\python.exe xadrex.py`; no cmd: `set XADREX_ANTIEMPATE=0` e depois
+`.venv\Scripts\python.exe xadrex.py`. Ligado, o log de cada lance nosso ganha o campo
 `antiempate=` (gatilho, freio, candidatos, avaliação da alternativa, decisão e tempo da 2ª busca). Os limiares
 ficam em `empate.py` e ainda são suposições.
 

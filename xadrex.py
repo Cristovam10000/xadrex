@@ -28,8 +28,9 @@ OPCOES_MOTOR = {"Threads": max(1, (os.cpu_count() or 4) - 4), "Hash": 512}
 PRIORIDADE_MOTOR = {"creationflags": subprocess.ABOVE_NORMAL_PRIORITY_CLASS} if os.name == "nt" else {}
 # chave de emergência (leitor de teclas com problema no dia): input() simples, sem o instante da 1ª tecla
 ENTRADA_SIMPLES = os.environ.get("XADREX_ENTRADA_SIMPLES") == "1"
-# anti-empate (empate.py): desligado até a arena mostrar ganho; lido a cada lance (a arena liga pelo atributo)
-ANTIEMPATE = os.environ.get("XADREX_ANTIEMPATE") == "1"
+# anti-empate (empate.py): ligado por padrão desde 04/11 (arena: 80 x 58 pontos 3-1-0 contra o bea, D13);
+# XADREX_ANTIEMPATE=0 desliga. Lido a cada lance (a arena liga e desliga pelo atributo)
+ANTIEMPATE = os.environ.get("XADREX_ANTIEMPATE", "1") != "0"
 AJUDA = ("Comandos: <lance UCI> [mm:ss do nosso relógio] | u (desfaz último par de lances) | tab | sair | fim\n"
          "Depois do nosso lance, aperte ENTER ao bater o relógio: o programa mede o nosso tempo sozinho.\n"
          "Ex.: 'e7e5 12:31' registra o lance e corrige o relógio interno com o relógio físico (opcional).")
@@ -299,7 +300,8 @@ def iniciar():
         f.write(
             f"# Xadrex — {datetime.now():%Y-%m-%d %H:%M:%S}\n"
             f"# motor: Stockfish 19 (sf_19) {OPCOES_MOTOR}; gestão de tempo: tempo.py (autoria da equipe)\n"
-            f"# nossa cor: {'brancas' if est['cor'] == 'w' else 'pretas'} | tempo: {base:g} min + {inc:g} s\n"
+            f"# nossa cor: {'brancas' if est['cor'] == 'w' else 'pretas'} | tempo: {base:g} min + {inc:g} s"
+            f" | anti-empate: {'ligado' if ANTIEMPATE else 'desligado'}\n"
             f"# aval = ponto de vista da nossa cor, em peões (#N = mate em N)\n"
         )
     return est, chess.Board()
@@ -478,6 +480,7 @@ def encerrar(log, motivo):
 
 def partida(est, board, log):
     nossa = chess.WHITE if est["cor"] == "w" else chess.BLACK
+    print(f"Anti-empate: {'LIGADO' if ANTIEMPATE else 'DESLIGADO'} (XADREX_ANTIEMPATE=0 desliga)")
     print(AJUDA)
     desenhar(board)
     t0 = time.monotonic()

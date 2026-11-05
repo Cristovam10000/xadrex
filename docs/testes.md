@@ -76,7 +76,7 @@ Antes de culpar o anti-empate por uma derrota, confira se ele desviou naquela pa
    - Ctrl+C no prompt mostra `(use 'sair' para fechar)` e, durante a busca, `Ctrl+C ignorado; recalculando`, sem fechar o programa;
    - esquecer o Enter depois do nosso lance e já digitar o lance do adversário: o lance tem que valer normalmente.
 3. Se o leitor falhar em qualquer item, usar a entrada simples. PowerShell: `$env:XADREX_ENTRADA_SIMPLES=1; .venv\Scripts\python.exe xadrex.py`. cmd: `set XADREX_ENTRADA_SIMPLES=1` e depois `.venv\Scripts\python.exe xadrex.py`. Nesse modo a leitura do relógio (`e7e5 12:31`) volta a ser obrigatória a cada 8 lances nossos e abaixo de 2 min.
-4. Decidir a chave do anti-empate pelo critério acima. Para ligar, no PowerShell: `$env:XADREX_ANTIEMPATE=1; .venv\Scripts\python.exe xadrex.py`; no cmd: `set XADREX_ANTIEMPATE=1`. Sem a variável, fica desligado.
+4. O anti-empate está ligado por padrão desde 04/11 (D13 do diário). Para desligar, no PowerShell: `$env:XADREX_ANTIEMPATE=0; .venv\Scripts\python.exe xadrex.py`; no cmd: `set XADREX_ANTIEMPATE=0`.
 5. As variáveis valem só para aquela janela do terminal. Abrir um terminal novo volta ao padrão.
 
 ## Histórico de execuções

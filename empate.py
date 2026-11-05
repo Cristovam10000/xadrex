@@ -3,7 +3,7 @@
 Pontuação do torneio 3-1-0: sair de um empate compensa se 2·P(vitória) > P(derrota). Quando a busca normal
 escolhe um lance que repete posição (ou a partida está parada há muitos meios-lances) com avaliação perto de
 zero, o xadrex.py faz uma 2ª busca curta só entre lances que não repetem e troca de lance se a melhor
-alternativa não for pior que PISO_CP. Ligado só com XADREX_ANTIEMPATE=1 (ver xadrex.ANTIEMPATE).
+alternativa não for pior que PISO_CP. Ligado por padrão; XADREX_ANTIEMPATE=0 desliga (ver xadrex.ANTIEMPATE).
 
 SUPOSIÇÕES: nenhum limiar abaixo foi medido; calibrar na arena.
 """
@@ -14,6 +14,9 @@ PISO_CP = -50            # pior avaliação aceitável da alternativa que não r
 SEM_PROGRESSO = 20       # meios-lances sem captura nem lance de peão (board.halfmove_clock)
 RELOGIO_MIN_MS = 60_000  # abaixo disto não gasta relógio tentando desviar
 FRACAO_BUSCA = 0.5       # 2ª busca: fração do alvo do lance, com teto no que sobra do máximo
+# piso da 2ª busca: no final do 10+0 o alvo do lance cai para 0,1-0,4 s e a 2ª busca nem rodava (arena 04/11: 40 de
+# 51 gatilhos barrados por "sem-tempo"). Passa do máximo do lance de propósito; o freio de RELOGIO_MIN_MS limita o custo.
+BUSCA_MIN_MS = 1000
 
 
 def repete(board, lance):
@@ -63,8 +66,9 @@ def candidatos(board, lance, motivo):
 
 
 def tempo_busca(alvo_ms, maximo_ms, gasto_ms):
-    """Orçamento da 2ª busca: FRACAO_BUSCA do alvo, sem passar do máximo do lance (o que já foi gasto sai dele)."""
-    return max(0.0, min(FRACAO_BUSCA * alvo_ms, maximo_ms - gasto_ms))
+    """Orçamento da 2ª busca: FRACAO_BUSCA do alvo, sem passar do máximo do lance (o que já foi gasto sai dele),
+    mas nunca abaixo de BUSCA_MIN_MS."""
+    return max(BUSCA_MIN_MS, min(FRACAO_BUSCA * alvo_ms, maximo_ms - gasto_ms))
 
 
 def desviar(aval_alternativa_cp):

@@ -32,7 +32,7 @@ Leia este arquivo primeiro se for continuar o trabalho (pessoa ou agente). Ele d
 | 2. Abortar antes da partida se o motor não abrir | feita (mensagem com caminho esperado, saída com código 1, partida salva preservada) | c4c2146 |
 | 3. Relógio automático (medir a parte humana sem digitar a leitura) | feita; falta testar o leitor de teclas no Windows real (`msvcrt`) antes de 06/11 | f091a20 |
 | — Testar o leitor de teclas no Windows (ou usar a chave `XADREX_ENTRADA_SIMPLES`, D9) | pendente | |
-| 4. Anti-empate com risco limitado | implementada (desligada por padrão, chave `XADREX_ANTIEMPATE`, D10); validada em lote pequeno (D11); ligar é decisão da equipe | cf518f7 |
+| 4. Anti-empate com risco limitado | **ligado por padrão** (`XADREX_ANTIEMPATE=0` desliga); 2ª busca com piso de 1 s; arena 30+30 partidas: 80 x 58 pontos 3-1-0 (D13) | cf518f7 |
 | — Stockfish `.exe` no repositório (passa de 100 MB) | aguardando decisão: Git LFS, `.zip` ou GitHub Release | |
 | — Incremento oficial | confirmado: 10+0, relógio físico (organização, 03/11/2026) | |
 
@@ -113,6 +113,16 @@ Medido no notebook da competição (Core 7 240H, 16 núcleos lógicos, modo de e
 - Decisão: `ABOVE_NORMAL_PRIORITY_CLASS` em `abrir_motor` e `Threads = núcleos − 4`. Fora do Windows nada muda.
 - Hash 512 MB mantido: em buscas de 5 a 15 s a tabela encheu de 4% a 19%, e a máquina tinha só 1,6–3,2 GB livres com navegador e editores abertos.
 - Validação: `rodar_testes.py unit` 3/3; smoke 4/4 vitórias, sem falhas. O teclado depende de teste humano (item 2 do checklist), mas o motor só pensa na nossa vez, quando ninguém digita.
+
+### D13 — 04/11/2026 — Anti-empate: piso de 1 s na 2ª busca e ligado por padrão
+- Problema achado na arena: no final do 10+0 o alvo do lance cai para 0,1–0,4 s e a 2ª busca (metade do alvo, teto no máximo) ficava abaixo de 200 ms. Em 10 partidas, 40 de 51 gatilhos foram barrados com `freio=sem-tempo` e só 6 desvios aconteceram.
+- Correção: `empate.BUSCA_MIN_MS = 1000`, piso da 2ª busca. Passa do máximo do lance de propósito; o freio de 1 min no relógio limita o custo.
+- Medida (`arena/resultados/ae70b/`, 10+0, atraso 3–8 s, seed 2026, as mesmas 30 aberturas e cores para os dois): **xadrex+ae +25 =5 −0 (80 pontos 3-1-0) × xadrex +14 =16 −0 (58)**. De pretas: +12 =3 contra +3 =12. Diferença de ~3 erros-padrão.
+- Como ganha: evita a repetição e a partida se alonga; 21 das 25 vitórias foram por tempo esgotado do bea (6 sem o anti-empate). Mates: 4 contra 8. O anti-empate não joga melhor; tira o empate rápido.
+- Custo: menor relógio nosso no fim 22 s (33 s sem). Nenhuma perda por tempo, lance ilegal ou falha; nenhuma derrota em 45 partidas com ele ligado (30 + 15 de uma rodada extra com seed 2027, interrompida por falta de memória).
+- Limite: o ganho depende de o adversário administrar mal o relógio, como o bea (2 s fixos por lance). Contra quem administra bem, deve ser menor; não há adversário assim na arena.
+- Descartado no mesmo dia: fazer a 1ª medida do atraso humano entrar na média em vez de substituir o palpite (um 1º lance lento de 22 s derrubava a busca para 0,2 s). Na simulação 10+0 com equipe lenta (6–12 s) as perdas por tempo subiram de 1/50 para 6/50; jogar alguns lances a 0,2 s custa menos que perder por tempo.
+- Decisão da equipe: ligado por padrão (`XADREX_ANTIEMPATE=0` desliga). O início da partida e o cabeçalho do log mostram se estava ligado.
 
 ## Arena
 
