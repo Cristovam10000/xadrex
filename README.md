@@ -51,6 +51,15 @@ Informe nossa cor, tempo base e incremento. O padrão é 10 min + 0 s (Errata n�
 físico (confirmado com a organização). No turno do adversário, digite o lance
 anunciado em UCI (`e2e4`, `e7e8q`). Nosso lance aparece como `>>> NOSSO LANCE: ...`.
 
+**Interface gráfica (opcional).** `.venv\Scripts\python.exe interface.py` joga a mesma partida pela janela, no
+lugar do terminal: tabuleiro com a nossa cor embaixo e o último lance destacado, o nosso lance por extenso para
+quem move a peça (ex.: `CAVALO g1 → f3`, com captura, roque e promoção), avaliação, relógio interno, as mensagens
+do programa, a caixa onde se digita (lance do adversário, `u`, `tab`, `sair`, `fim`, as perguntas iniciais) e o
+botão **BATI O RELÓGIO** (o mesmo que o ENTER vazio). O laço da partida, o relógio automático (1ª tecla e ENTER
+na caixa), o anti-empate, o estado salvo e o log são os do `xadrex.py`; só a entrada e a saída mudam. Fechar a
+janela equivale a `sair`: `interface.py` ou `xadrex.py` retomam do mesmo ponto. Não abra os dois ao mesmo tempo
+(dividem a mesma partida salva).
+
 **Relógio automático.** Depois de mostrar o nosso lance, o programa pede `ENTER ao bater o relógio`: quem
 opera aperta ENTER no momento em que a equipe bate o relógio físico. Com isso o programa mede sozinho o tempo
 que saiu do nosso relógio: da primeira tecla do lance adversário (mais 1 s estimado para ouvir o anúncio) até

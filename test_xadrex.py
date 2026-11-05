@@ -370,6 +370,31 @@ def test_partida_relogio_automatico():
     assert not roteiro
 
 
+def test_interface():
+    """Janela do tabuleiro: descrição do lance para quem move a peça e leitura do estado salvo."""
+    import interface
+    b = chess.Board()
+    assert interface.descrever(b, chess.Move.from_uci("g1f3")) == "CAVALO g1 → f3"
+    b = chess.Board("r3k2r/8/8/3p4/4P3/8/6p1/R3K2R b KQkq - 0 1")
+    assert interface.descrever(b, chess.Move.from_uci("e8g8")) == "REI e8 → g8 (roque)"
+    assert interface.descrever(b, chess.Move.from_uci("d5e4")) == "PEÃO d5 → e4 captura PEÃO"
+    assert interface.descrever(b, chess.Move.from_uci("g2h1q")) == "PEÃO g2 → h1 captura TORRE promove a DAMA"
+    original = xadrex.ESTADO
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            xadrex.ESTADO = Path(d) / "partida_atual.json"
+            assert interface.ler_estado() is None  # sem partida
+            xadrex.ESTADO.write_text("{meio arquivo", encoding="utf-8")
+            assert interface.ler_estado() is None  # ilegível: ignora, tenta de novo depois
+            xadrex.ESTADO.write_text(json.dumps({"cor": "b", "lances": ["e2e4", "e7e5"]}), encoding="utf-8")
+            est, board = interface.ler_estado()
+            assert est["cor"] == "b" and board.fen().startswith("rnbqkbnr/pppp1ppp/8/4p3/4P3")
+            xadrex.ESTADO.write_text('{"cor": "w", "lances": []}', encoding="utf-8-sig")  # BOM (editor/PowerShell)
+            assert interface.ler_estado() is not None
+        finally:
+            xadrex.ESTADO = original
+
+
 if __name__ == "__main__":
     for nome, f in list(globals().items()):
         if nome.startswith("test_"):
