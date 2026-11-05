@@ -11,7 +11,7 @@ decide os próprios lances e grava o log exigido pela organização.
 | Binário | `stockfish-windows-x86-64-universal.exe` (release oficial) |
 | Licença do motor | GPLv3 — `engines/STOCKFISH-LICENSE.txt`; código-fonte em https://github.com/official-stockfish/Stockfish/tree/sf_19 |
 | Biblioteca de tabuleiro | `chess` (python-chess) 1.11.2 — representação e legalidade dos lances |
-| Autoria da equipe | Gestão de tempo — `tempo.py` (ver seção abaixo); integração e controle da busca em `xadrex.py`; anti-empate opcional em `empate.py` (desligado por padrão) |
+| Autoria da equipe | Gestão de tempo — `tempo.py` (ver seção abaixo); integração e controle da busca em `xadrex.py`; anti-empate em `empate.py` (ligado por padrão) |
 | Book / tablebase / GPU | Não utilizados |
 
 ## Instalação (feita antes do evento, com internet)
@@ -39,6 +39,10 @@ O `.exe` (103 MB) não fica no repositório porque excede o limite de arquivo do
 ```powershell
 .venv\Scripts\python.exe xadrex.py
 ```
+
+O Stockfish roda com `Threads` = núcleos lógicos − 4 e Hash 512 MB e, no Windows, com prioridade **acima do
+normal**: com prioridade normal o Windows deixava o motor em ~4 núcleos (1,9 M nós/s no notebook do evento); acima
+do normal chega a 6,0–6,2 M nós/s sem travar o teclado nem o relógio automático (diário D12).
 
 Se o motor não abrir (ex.: `.exe` fora de `engines/`), o programa mostra o caminho esperado e fecha com código 1
 sem iniciar a partida; uma partida salva continua guardada para a retomada. Confira a seção "Instalação".
@@ -90,6 +94,8 @@ ficam em `empate.py` e ainda são suposições.
 Testes: `.venv\Scripts\python.exe test_tempo.py`, `.venv\Scripts\python.exe test_empate.py` e
 `.venv\Scripts\python.exe test_xadrex.py`. Para rodar tudo de uma vez (testes de unidade, smoke da arena,
 match e lote), use `rodar_testes.py`; o guia completo está em [docs/testes.md](docs/testes.md).
+`arena/aberturas.py` junta as partidas da arena e dos logs em `arena/resultados/aberturas.csv` (abertura, nossa
+cor, resultado) e imprime o placar por abertura; partida real só entra com resultado se for encerrada com `fim`.
 
 ## Gestor de tempo (autoria da equipe)
 
