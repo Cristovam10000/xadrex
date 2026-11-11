@@ -32,8 +32,39 @@ ENTRADA_SIMPLES = os.environ.get("XADREX_ENTRADA_SIMPLES") == "1"
 # XADREX_ANTIEMPATE=0 desliga. Lido a cada lance (a arena liga e desliga pelo atributo)
 ANTIEMPATE = os.environ.get("XADREX_ANTIEMPATE", "1") != "0"
 AJUDA = ("Comandos: <lance UCI> [mm:ss do nosso relógio] | u (desfaz último par de lances) | tab | sair | fim\n"
+         "pos <FEN> troca a posição do tabuleiro (sem regra; o histórico de lances recomeça dali).\n"
+         "relogio mm:ss acerta o NOSSO relógio interno (sem conferir se é plausível); relogio adv mm:ss, o do adversário.\n"
          "Depois do nosso lance, aperte ENTER ao bater o relógio: o programa mede o nosso tempo sozinho.\n"
          "Ex.: 'e7e5 12:31' registra o lance e corrige o relógio interno com o relógio físico (opcional).")
+
+_monotonic_real = time.monotonic
+
+
+class Pausavel:
+    """time.monotonic() que para durante a pausa: com o botão PAUSAR da janela nenhum relógio anda (os dois da tela,
+    o relógio automático e o orçamento do motor), porque todos leem o tempo daqui (`xadrex.time`)."""
+    sleep = staticmethod(time.sleep)
+
+    def __init__(self):
+        self.parado = 0.0    # segundos pausados já encerrados
+        self.desde = None    # instante real do início da pausa atual
+
+    def monotonic(self):
+        real = _monotonic_real()
+        return real - self.parado - (real - self.desde if self.desde is not None else 0.0)
+
+    def alternar(self):
+        """Pausa ou continua; devolve True se ficou pausado."""
+        if self.desde is None:
+            self.desde = _monotonic_real()
+        else:
+            self.parado += _monotonic_real() - self.desde
+            self.desde = None
+        return self.desde is not None
+
+
+relogio_pausavel = Pausavel()
+time = relogio_pausavel  # noqa: F811 (de propósito: o módulo inteiro passa a ler o tempo pausável)
 
 motor = None
 logging.getLogger("asyncio").setLevel(logging.CRITICAL)  # motor morto pelo vigia gera aviso inofensivo no console
@@ -219,6 +250,7 @@ def registrar(log, linha):
 
 def salvar(est, board):
     est["lances"] = [m.uci() for m in board.move_stack]
+    est["fen"] = board.root().fen()  # posição de onde os lances partem (muda com 'pos')
     tmp = ESTADO.with_suffix(".tmp")
     try:
         tmp.write_text(json.dumps(est, indent=1), encoding="utf-8")
@@ -250,7 +282,7 @@ def carregar_estado():
         raise ValueError("campos inválidos")
     tempo.AtrasoHumano(**est["atraso"])
     str(est["log"])
-    board = chess.Board()
+    board = chess.Board(est.get("fen", chess.STARTING_FEN))  # estado antigo, sem 'fen': posição inicial
     for u in est["lances"]:
         board.push_uci(u)  # levanta exceção se algum lance for ilegal
     return est, board
@@ -272,6 +304,13 @@ def iniciar():
                     try:
                         est["previsto_ms"], est["k"], est["exigir_leitura"] = ler_relogio(r), 0, False
                         est["medido"], est["folga_ms"] = False, 0  # relógio automático recomeça do zero
+                        break
+                    except ValueError:
+                        print("Use mm:ss")
+                while True:
+                    r = perguntar("Relógio do ADVERSÁRIO agora (mm:ss)", fmt_relogio(relogios(est)["adv"]))
+                    try:
+                        relogios(est).update(nos=est["previsto_ms"], adv=ler_relogio(r))
                         return est, board
                     except ValueError:
                         print("Use mm:ss")
@@ -454,6 +493,7 @@ def fechar_relogio(est, aberto, fim, por_enter, log):
     1ª tecla dele: conta a mais (lado seguro), não ensina o atraso humano e vira folga para a próxima leitura."""
     est["previsto_ms"], gasto, humano = tempo.fechar_lance(aberto["relogio"], aberto["inicio"], aberto["t0"], fim,
                                                            aberto["busca"], est["inc_s"] * 1000)
+    correr(est, "adv", fim, nos=est["previsto_ms"])  # batemos o relógio: o nosso para, o do adversário corre
     est["medido"] = gasto is not None and not ENTRADA_SIMPLES
     if ENTRADA_SIMPLES:  # sem a 1ª tecla o tempo de digitar não sai do relógio interno (conta a menos): volta a
         est["k"] += 1    # exigir leitura a cada LEITURA_A_CADA lances, como antes do relógio automático
@@ -472,6 +512,29 @@ def fechar_relogio(est, aberto, fim, por_enter, log):
           + (f"; parte humana {humano / 1000:.1f}s)" if humano is not None and por_enter else ")"))
 
 
+def avisar_relogios(rel):
+    """Gancho: a interface troca por uma função que mostra os dois relógios correndo ao vivo."""
+
+
+def relogios(est):
+    """Os dois relógios: valor em ms no instante `desde` (time.monotonic) do que está `correndo` ('nos'/'adv')."""
+    return est.setdefault("relogios", {"nos": est["previsto_ms"], "adv": est.get("base_s", 600) * 1000,
+                                       "correndo": None, "desde": None})
+
+
+def correr(est, lado, parou, comecou=None, **valores):
+    """O relógio que está correndo para em `parou` (mais o incremento, se o lance acabou); `lado` corre desde
+    `comecou` (padrão: `parou`). `valores` (nos=, adv=) acertam os relógios depois disso."""
+    r = relogios(est)
+    if r["correndo"] and r["desde"] is not None:
+        r[r["correndo"]] -= max(0.0, parou - r["desde"]) * 1000
+        if r["correndo"] != lado:
+            r[r["correndo"]] += est["inc_s"] * 1000
+    r.update(valores)
+    r["correndo"], r["desde"] = lado, parou if comecou is None else comecou
+    avisar_relogios({**r, "cor": est.get("cor")})
+
+
 def encerrar(log, motivo):
     registrar(log, f"# FIM: {motivo}")
     print(f"\nFIM: {motivo}")
@@ -484,6 +547,8 @@ def partida(est, board, log):
     print(AJUDA)
     desenhar(board)
     t0 = time.monotonic()
+    relogios(est)["correndo"] = None  # 'desde' salvo é de outro processo: recomeça a contar daqui
+    correr(est, "nos" if board.turn == nossa else "adv", t0, nos=est["previsto_ms"])
     inicio = None  # 1ª tecla na vez do adversário: o nosso relógio corre desde ~OUVIR_MS antes
     aberto = None  # nosso lance já mostrado, à espera do ENTER ao bater o relógio
     while True:
@@ -492,6 +557,8 @@ def partida(est, board, log):
             encerrar(log, fim)
             return
         if board.turn == nossa:
+            if relogios(est)["correndo"] != "nos":  # ex.: 'pos' deu a vez para nós
+                correr(est, "nos", time.monotonic(), nos=est["previsto_ms"])
             relogio, num = est["previsto_ms"], board.fullmove_number
             try:
                 busca = jogar_nosso_lance(board, est, nossa, log, t0)
@@ -517,7 +584,8 @@ def partida(est, board, log):
             continue
         except EOFError:
             return
-        texto = texto.strip().lower()
+        bruto = texto.strip()
+        texto = bruto.lower()
         if aberto:  # ENTER esquecido: a 1ª tecla do lance adversário fecha o nosso tempo (a mais = lado seguro)
             fechar_relogio(est, aberto, enter if not texto else primeira, not texto, log)
             aberto = None
@@ -525,6 +593,44 @@ def partida(est, board, log):
             if not texto:
                 continue
             exigir = leitura_obrigatoria(est)
+        if texto.split()[:1] in (["relogio"], ["relógio"]):  # acerto direto, como na retomada
+            partes = texto.split()[1:]
+            lado = "adv" if partes[:1] == ["adv"] else "nos"
+            try:
+                lido = ler_relogio(partes[-1])
+            except (IndexError, ValueError):
+                print("Use: relogio mm:ss (o nosso) ou relogio adv mm:ss (o do adversário)")
+                continue
+            r = relogios(est)
+            if lado == "nos":  # na vez do adversário o nosso está parado: o valor é o de quando ele voltar a correr
+                est["previsto_ms"], est["k"], est["exigir_leitura"] = lido, 0, False
+                est["medido"], est["folga_ms"] = False, 0
+            if r["correndo"] == lado:
+                r["desde"] = time.monotonic()
+            r[lado] = lido
+            avisar_relogios({**r, "cor": est.get("cor")})
+            registrar(log, f"# relógio {'do adversário' if lado == 'adv' else 'nosso'} acertado: {fmt_relogio(lido)}")
+            salvar(est, board)
+            print(f"(relógio {'do adversário' if lado == 'adv' else 'nosso'} acertado para {fmt_relogio(lido)})")
+            continue
+        if texto.startswith("pos "):  # posição editada à mão: o operador assume o risco (pedido da equipe)
+            inicio = None
+            try:
+                novo = chess.Board(bruto.split(None, 1)[1])  # FEN diferencia maiúsculas: usa o texto sem lower()
+            except ValueError as e:
+                print(f"FEN inválida ({e}).")
+                continue
+            if not novo.is_valid():
+                print(f"!! POSIÇÃO IMPOSSÍVEL ({novo.status()!r}): o Stockfish pode cair e o programa jogaria um "
+                      "lance legal qualquer. Corrija com outro 'pos' (ou EDITAR POSIÇÃO) se não foi de propósito.")
+            # guarda a posição de antes: 'u' sem lance para desfazer volta a ela
+            est.setdefault("edicoes", []).append({"fen": board.root().fen(),
+                                                  "lances": [m.uci() for m in board.move_stack]})
+            board.set_fen(novo.fen())  # zera o histórico: 'u' e repetição só contam daqui em diante
+            registrar(log, f"# posição editada: {board.fen()}")
+            salvar(est, board)
+            desenhar(board)
+            continue
         nova = inicio is None
         if nova:  # 1ª linha da vez do adversário; tab e linha vazia não contam (podem vir antes do lance dele)
             inicio = primeira
@@ -549,6 +655,16 @@ def partida(est, board, log):
                 registrar(log, f"# desfeito: voltou para {len(board.move_stack)} meios-lances")
                 salvar(est, board)
                 print("Desfeito. Digite o lance correto do adversário.")
+            elif est.get("edicoes"):  # nada a desfazer desde a última edição: volta para antes dela
+                antes = est["edicoes"].pop()
+                board.set_fen(antes["fen"])
+                for u in antes["lances"]:
+                    board.push_uci(u)
+                est["k"], est["exigir_leitura"], est["medido"] = 0, True, False
+                registrar(log, f"# edição desfeita: voltou para {board.fen()}")
+                salvar(est, board)
+                desenhar(board)
+                print("Edição desfeita: posição de antes restaurada.")
             else:
                 print("Nada para desfazer.")
             continue
@@ -588,6 +704,8 @@ def partida(est, board, log):
             a = tempo.AtrasoHumano(**est["atraso"])
             extra += f" leitura={fmt_relogio(leitura)} atraso={a.media / 1000:.1f}s/{a.seguro / 1000:.1f}s"
             print(f"(relógio calibrado; atraso humano ~{a.media / 1000:.1f}s, reserva {a.seguro / 1000:.1f}s)")
+        # o adversário bateu o relógio ~OUVIR_MS antes da 1ª tecla; o nosso vale previsto_ms em t0 (como na busca)
+        correr(est, "nos", inicio - tempo.OUVIR_MS / 1000 if inicio is not None else enter, t0, nos=est["previsto_ms"])
         registrar(log, f"lance={num} cor={'pretas' if nossa else 'brancas'} uci={lance.uci()} (adversário){extra}")
         salvar(est, board)
 

@@ -60,6 +60,31 @@ na caixa), o anti-empate, o estado salvo e o log são os do `xadrex.py`; só a e
 janela equivale a `sair`: `interface.py` ou `xadrex.py` retomam do mesmo ponto. Não abra os dois ao mesmo tempo
 (dividem a mesma partida salva).
 
+**Os dois relógios.** A janela mostra o NOSSO relógio e o do ADVERSÁRIO contando ao vivo; o que está correndo fica
+verde (vermelho abaixo de 1 min). O do adversário corre do nosso ENTER ao bater o relógio até ele bater o dele
+(1ª tecla do lance dele menos 1 s de ouvir, com o incremento somado); o nosso corre dali até o nosso ENTER e é o
+mesmo relógio interno que o motor usa. O do adversário é só para acompanhar: o motor não o usa. Clicar num relógio
+acerta o valor dele (no terminal, `relogio mm:ss` para o nosso e `relogio adv mm:ss` para o do adversário), sem a
+checagem de leitura plausível do `e7e5 8:31`; acertar o nosso dispensa a leitura exigida depois de desfazer. Só
+funciona quando o programa está pedindo o lance: com o motor pensando o valor digitado já chegaria velho. Os dois
+ficam na partida salva; na retomada o programa pergunta os dois. O botão **PAUSAR RELÓGIOS** para o tempo do
+programa inteiro (os dois relógios da tela, o relógio automático e a conta do motor), seja qual for o que está
+correndo; clicar de novo (**CONTINUAR**) volta a contar de onde parou. Se o motor estiver pensando, ele termina a
+busca normalmente, mas o tempo pausado não entra na nossa conta.
+
+**Desfazer jogada e editar a posição (sem regra).** O botão **DESFAZER JOGADA** é o `u`: tira o nosso último lance
+e o do adversário (peças comidas voltam) para digitar de novo o lance certo; apertado de novo, volta mais um par. Se
+não houver lance desde uma edição, ele desfaz a edição. **EDITAR POSIÇÃO** liga e desliga um editor livre, a
+qualquer momento (até com o motor pensando): clique numa peça e depois na casa para movê-la (por cima do que
+houver), botão direito apaga, uma peça da paleta + uma casa põe peça nova, escolhe-se de quem é a vez, e DESFAZER
+JOGADA desfaz o último clique da edição. Desligar a edição manda a posição para o motor (se ele estiver pensando, vai
+quando ele terminar e substitui o lance que ele achou); DESCARTAR EDIÇÃO sai sem mudar nada. No terminal o mesmo é
+`pos <FEN>`. O histórico recomeça na posição editada: a repetição de posições conta só dali, e o roque só vale se
+rei e torre seguem nas casas originais. Depois de desfazer, o programa exige a leitura do nosso relógio no próximo
+lance (ex.: `e7e5 8:31`), porque o tempo do lance desfeito já tinha saído do relógio interno. Posição
+impossível (ex.: 17 peças de um lado, rei em xeque na vez do outro) gera aviso, e o Stockfish pode cair; aí o
+programa joga um lance legal qualquer. A edição fica no log (`# posição editada: <FEN>`) e na partida salva.
+
 **Relógio automático.** Depois de mostrar o nosso lance, o programa pede `ENTER ao bater o relógio`: quem
 opera aperta ENTER no momento em que a equipe bate o relógio físico. Com isso o programa mede sozinho o tempo
 que saiu do nosso relógio: da primeira tecla do lance adversário (mais 1 s estimado para ouvir o anúncio) até

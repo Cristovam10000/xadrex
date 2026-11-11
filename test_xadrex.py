@@ -370,6 +370,112 @@ def test_partida_relogio_automatico():
     assert not roteiro
 
 
+def test_pos_editada():
+    """'pos <FEN>': troca a posição (FEN com maiúsculas), zera o histórico e a retomada parte da nova posição."""
+    import contextlib
+    import io
+    fen = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"
+    roteiro = ["e2e4", "pos " + fen, "pos lixo", "e2e3", "u", "u", "relogio 7:5x", "relogio 7:05", "sair"]
+    vistos = []
+    est = {"cor": "b", "base_s": 600, "inc_s": 0, "previsto_ms": 600_000, "k": 0, "exigir_leitura": False,
+           "medido": False, "folga_ms": 0, "atraso": {"media": 5000, "desvio": 2500, "amostras": 0},
+           "aval_anterior": None, "log": "x", "lances": []}
+    nossos = iter(["e7e5", "e8d7"])
+    originais = xadrex.ler_linha, xadrex.pensar, xadrex.ESTADO
+    with tempfile.TemporaryDirectory() as d:
+        xadrex.ler_linha = lambda _p: (vistos.append(json.loads(json.dumps(est))) or roteiro.pop(0),
+                                       time.monotonic(), time.monotonic())
+        xadrex.pensar = lambda *a: (chess.Move.from_uci(next(nossos)), {}, xadrex.tempo.ControleBusca(1000, 1000), "t")
+        xadrex.ESTADO = Path(d) / "partida_atual.json"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                xadrex.partida(est, chess.Board(), io.StringIO())
+            salvo, board = xadrex.carregar_estado()
+        finally:
+            xadrex.ler_linha, xadrex.pensar, xadrex.ESTADO = originais
+    assert vistos[4]["fen"] == fen and vistos[4]["lances"] == ["e2e3", "e8d7"]  # 'pos lixo' recusado sem mexer
+    assert vistos[5]["fen"] == fen and vistos[5]["lances"] == []  # 1º 'u': desfaz o par depois da edição
+    # 2º 'u': sem lance desde a edição, volta para antes dela (peças e lances de antes)
+    assert salvo["fen"] == chess.STARTING_FEN and salvo["lances"] == ["e2e4", "e7e5"] and salvo["edicoes"] == []
+    assert board.piece_at(chess.E4) == chess.Piece.from_symbol("P") and vistos[6]["exigir_leitura"]
+    # 'relogio 7:5x' recusado; 'relogio 7:05' acerta o relógio e dispensa a leitura exigida depois do 'u'
+    assert vistos[7]["previsto_ms"] == vistos[6]["previsto_ms"]
+    assert salvo["previsto_ms"] == 425_000 and not salvo["exigir_leitura"] and not roteiro
+
+
+def test_dois_relogios():
+    """Cada relógio para quando o lance do seu lado acaba e o outro corre; 'relogio adv mm:ss' acerta o adversário."""
+    import contextlib
+    import io
+    import types
+    agora = [100.0]
+    roteiro = [("e2e4", 10, 2), ("", 4, 0), ("relogio adv 5:00", 1, 0), ("sair", 1, 0)]
+    avisos = []
+
+    def ler_linha(_p):
+        texto, espera, digitar = roteiro.pop(0)
+        agora[0] += espera
+        primeira = agora[0]
+        agora[0] += digitar
+        return texto, primeira, agora[0]
+
+    def pensar(*_a):
+        agora[0] += 3
+        return chess.Move.from_uci("e7e5"), {}, xadrex.tempo.ControleBusca(1000, 1000), "teste"
+
+    est = {"cor": "b", "base_s": 600, "inc_s": 0, "previsto_ms": 600_000, "k": 0, "exigir_leitura": False,
+           "medido": False, "folga_ms": 0, "atraso": {"media": 5000, "desvio": 2500, "amostras": 0},
+           "aval_anterior": None, "log": "x", "lances": []}
+    originais = xadrex.ler_linha, xadrex.pensar, xadrex.time, xadrex.ESTADO, xadrex.avisar_relogios
+    with tempfile.TemporaryDirectory() as d:
+        xadrex.ler_linha, xadrex.pensar, xadrex.avisar_relogios = ler_linha, pensar, avisos.append
+        xadrex.time = types.SimpleNamespace(monotonic=lambda: agora[0], sleep=time.sleep)
+        xadrex.ESTADO = Path(d) / "partida_atual.json"
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                xadrex.partida(est, chess.Board(), io.StringIO())
+        finally:
+            xadrex.ler_linha, xadrex.pensar, xadrex.time, xadrex.ESTADO, xadrex.avisar_relogios = originais
+    resumo = [(a["correndo"], a["desde"], a["nos"], a["adv"]) for a in avisos]
+    assert resumo == [
+        ("adv", 100, 600_000, 600_000),     # somos as pretas: começa o do adversário
+        ("nos", 112, 597_000, 591_000),     # ele bateu em 109 (1ª tecla 110 - 1 s de ouvir); o nosso, como na busca
+        ("adv", 119, 590_000, 591_000),     # ENTER ao bater em 119: o nosso para, o dele volta a correr
+        ("adv", 120, 590_000, 300_000),     # 'relogio adv 5:00' com o dele correndo: conta de 5:00 a partir de agora
+    ], resumo
+
+
+def test_pausa():
+    """PAUSAR: o tempo do programa para (nenhum relógio anda) e volta a correr de onde estava."""
+    t = [10.0]
+    original = xadrex._monotonic_real
+    xadrex._monotonic_real = lambda: t[0]
+    try:
+        p = xadrex.Pausavel()
+        a = p.monotonic()
+        assert p.alternar() is True
+        t[0] += 5
+        assert p.monotonic() == a  # 5 s pausados não contam
+        assert p.alternar() is False
+        t[0] += 2
+        assert p.monotonic() == a + 2
+        p.alternar(); t[0] += 1; p.alternar(); t[0] += 1  # segunda pausa soma com a primeira
+        assert p.monotonic() == a + 3
+    finally:
+        xadrex._monotonic_real = original
+
+
+def test_desfazer_devolve_capturada():
+    """'u' (botão DESFAZER JOGADA) depois de uma captura: a peça comida volta para o tabuleiro."""
+    b = chess.Board()
+    for u in ["e2e4", "d7d5", "e4d5", "d8d5"]:  # nós de pretas: Dxd5 foi o nosso lance
+        b.push_uci(u)
+    b.push_uci("b1c3")  # adversário digitado errado... e o nosso responderia; desfaz o par Cc3 + nosso
+    b.push_uci("d5a5")
+    assert desfazer(b, chess.BLACK) and desfazer(b, chess.BLACK)  # volta até antes de exd5
+    assert b.piece_at(chess.D5) == chess.Piece.from_symbol("p") and b.piece_at(chess.D8) == chess.Piece.from_symbol("q")
+
+
 def test_interface():
     """Janela do tabuleiro: descrição do lance para quem move a peça e leitura do estado salvo."""
     import interface
